@@ -1,0 +1,17 @@
+# Core dependencies
+flet>=0.10.0
+
+# HTTP requests for providers
+requests>=2.28.0
+
+# HTML parsing
+beautifulsoup4>=4.11.0
+lxml>=4.9.0
+
+# Torrent functionality
+# NOTE: libtorrent installation on Windows:
+# Use one of these methods:
+# 1. conda install -c conda-forge python-libtorrent
+# 2. Download pre-built wheel from: https://github.com/arvidn/libtorrent/releases
+# 3. pip install libtorrent-python (community build)
+# libtorrent>=2.0.0
