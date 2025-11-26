@@ -3,6 +3,18 @@ import threading
 from typing import List
 import webbrowser
 import time
+import os
+import sys
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
 
 # Import existing backend logic
 from models.category import Category
@@ -22,6 +34,10 @@ class TorrentSearchApp:
         self.page.title = "SwiftSeed"
         self.page.padding = 0
         self.page.theme_mode = ft.ThemeMode.DARK
+        
+        # Set window icon
+        icon_path = resource_path(os.path.join("assets", "icon.ico"))
+        self.page.window.icon = icon_path
         
         # Initialize managers
         self.settings_manager = SettingsManager()
@@ -275,6 +291,13 @@ class TorrentSearchApp:
                 ft.Text("About SwiftSeed", size=30, weight=ft.FontWeight.BOLD),
                 ft.Divider(),
                 ft.Container(height=20),
+                ft.Image(
+                    src=resource_path(os.path.join("assets", "icon.png")),
+                    width=100,
+                    height=100,
+                    fit=ft.ImageFit.CONTAIN,
+                ),
+                ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
                 ft.Text("Version 1.5", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
