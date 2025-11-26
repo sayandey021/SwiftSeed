@@ -25,7 +25,7 @@
 ![Search Interface](screenshots/search_interface.png)
 
 ### Downloads Manager
-![Downloads View](screenshots/downloads_view.png)
+![Downloads View](screenshots/downloads_views.png)
 
 </div>
 
