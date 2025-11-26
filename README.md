@@ -1,6 +1,6 @@
 <div align="center">
 
-![SwiftSeed Logo](screenshots/logo.png)
+![SwiftSeed Logo](src/assets/logo.ico)
 
 # 🌱 SwiftSeed
 
