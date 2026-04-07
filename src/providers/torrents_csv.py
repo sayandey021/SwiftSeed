@@ -18,6 +18,7 @@ class TorrentsCSVProvider(SearchProvider):
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
             enabled_by_default=True,
+            language="Multi",
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -54,6 +55,20 @@ class TorrentsCSVProvider(SearchProvider):
             if not info_hash:
                 return None
             
+            # Construct magnet URI from info_hash
+            import urllib.parse
+            trackers = [
+                "udp://tracker.opentrackr.org:1337/announce",
+                "udp://open.stealth.si:80/announce",
+                "udp://tracker.openbittorrent.com:6969/announce",
+                "udp://exodus.desync.com:6969/announce",
+            ]
+            
+            encoded_name = urllib.parse.quote(name)
+            encoded_trackers = [urllib.parse.quote(t) for t in trackers]
+            tracker_str = "&tr=".join(encoded_trackers)
+            magnet_uri = f"magnet:?xt=urn:btih:{info_hash}&dn={encoded_name}&tr={tracker_str}"
+            
             # Parse size
             size_bytes = int(data.get('size_bytes', 0))
             size = self._format_size(size_bytes)
@@ -79,6 +94,7 @@ class TorrentsCSVProvider(SearchProvider):
                 provider_name=self.info.name,
                 upload_date=upload_date,
                 description_url=description_url,
+                magnet_uri=magnet_uri,
                 info_hash=info_hash,
                 category=None,  # TorrentsCSV doesn't provide categories
             )

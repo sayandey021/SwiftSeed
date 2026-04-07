@@ -13,7 +13,7 @@ class Category(Enum):
     GAMES = ("Games", False)
     MOVIES = ("Movies", False)
     MUSIC = ("Music", False)
-    PORN = ("Porn", True)
+    PORN = ("Adult", True)
     SERIES = ("Series", False)
     TV = ("TV", False)  # Alias for Series
     OTHER = ("Other", True)
@@ -28,6 +28,9 @@ class Category(Enum):
     @classmethod
     def from_string(cls, name: str):
         """Get category from string name."""
+        # Backwards compatibility: "Porn" maps to PORN (now displayed as "Adult")
+        if name.lower() == "porn":
+            return cls.PORN
         for category in cls:
             if category.display_name.lower() == name.lower():
                 return category

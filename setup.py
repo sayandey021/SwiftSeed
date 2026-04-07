@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="SwiftSeed",
-    version="1.5.0",
+    version="1.8.0",
     description="A modern, standalone torrent search and download application",
     author="Sayan Dey",
     packages=find_packages(where="src"),

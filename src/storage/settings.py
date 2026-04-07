@@ -10,9 +10,8 @@ class SettingsManager:
     
     def __init__(self, settings_path: str = None):
         if settings_path is None:
-            # Use user's home directory
-            home = os.path.expanduser("~")
-            app_dir = os.path.join(home, ".swiftseed")
+            # Use LOCALAPPDATA for Windows (standard app data location)
+            app_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser("~")), "SwiftSeed")
             os.makedirs(app_dir, exist_ok=True)
             settings_path = os.path.join(app_dir, "settings.json")
         
@@ -30,10 +29,19 @@ class SettingsManager:
         
         # Return defaults
         return {
-            'enabled_providers': ['nyaasi', '1337x', 'torrentscsv'],
+            'enabled_providers': [
+                'thepiratebay', 
+                'torrentscsv', 
+                'knaben', 
+                'fitgirl',
+                'nyaa',
+                'eztv',
+            ],
             'default_category': 'All',
             'window_width': 1200,
             'window_height': 700,
+            'show_close_confirmation': True,
+            'default_close_action': 'minimize',
         }
     
     def _save_settings(self):

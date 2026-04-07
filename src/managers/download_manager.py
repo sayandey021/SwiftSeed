@@ -4,173 +4,23 @@ import os
 import json
 import subprocess
 import requests
+import tempfile
 from enum import Enum
 from pathlib import Path
 from ..storage.download_history import DownloadHistoryManager
 
 class DownloadStatus(Enum):
     DOWNLOADING = "Downloading"
-    LOADING = "Loading Metadata"
-    SEEDING = "Seeding"
-    PAUSED = "Paused"
-    STOPPED = "Stopped"
-    COMPLETED = "Completed"
-    ERROR = "Error"
-    CHECKING = "Checking"
-    QUEUED = "Queued"
-
-class DownloadItem:
-    def __init__(self, id, name, size_str, magnet, save_path, temp_path, gid=None):
-        self.id = id
-        self.name = name
-        self.size_str = size_str
-        self.magnet = magnet
-        self.save_path = save_path
-        self.temp_path = temp_path
-        self.gid = gid # Aria2 GID
-        self.status = DownloadStatus.QUEUED
-        self.progress = 0.0
-        self.speed = "0 KB/s"
-        self.upload_speed = "0 KB/s"
-        self.eta = "∞"
-        self.peers = 0
-        self.seeds = 0
-        self.downloaded_bytes = 0
-        self.total_bytes = 0
-        self.files = [] # List of files in the torrent
-        self.selected_files = [] # List of selected files for download
-        self.file_priorities = {} # File priorities for download
-        
-        # Resume data
-        self.resume_data = None
-        
-        # Determine file extension from name
-        self.file_extension = self._get_extension(name)
-    
-    def to_dict(self):
-        """Converts the DownloadItem object to a dictionary for serialization."""
-        return {
-            "id": self.id,
-            "name": self.name,
-            "size_str": self.size_str,
-            "magnet": self.magnet,
-            "save_path": self.save_path,
-            "temp_path": self.temp_path,
-            "gid": self.gid,
-            "status": self.status.value,  # Store Enum as its value
-            "progress": self.progress,
-            "speed": self.speed,
-            "upload_speed": self.upload_speed,
-            "eta": self.eta,
-            "peers": self.peers,
-            "seeds": self.seeds,
-            "downloaded_bytes": self.downloaded_bytes,
-            "total_bytes": self.total_bytes,
-            "files": self.files,
-            "selected_files": self.selected_files,
-            "file_priorities": self.file_priorities,
-            "resume_data": self.resume_data,
-            "file_extension": self.file_extension
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict):
-        """Creates a DownloadItem object from a dictionary."""
-        item = cls(
-            id=data.get('id'),
-            name=data.get('name'),
-            size_str=data.get('size_str'),
-            magnet=data.get('magnet'),
-            save_path=data.get('save_path'),
-            temp_path=data.get('temp_path'),
-            gid=data.get('gid')
-        )
-        item.status = DownloadStatus(data.get('status', DownloadStatus.QUEUED.value)) # Convert value back to Enum
-        item.progress = data.get('progress', 0.0)
-        item.speed = data.get('speed', "0 KB/s")
-        item.upload_speed = data.get('upload_speed', "0 KB/s")
-        item.eta = data.get('eta', "∞")
-        item.peers = data.get('peers', 0)
-        item.seeds = data.get('seeds', 0)
-        item.downloaded_bytes = data.get('downloaded_bytes', 0)
-        item.total_bytes = data.get('total_bytes', 0)
-        item.files = data.get('files', [])
-        item.selected_files = data.get('selected_files', [])
-        item.file_priorities = data.get('file_priorities', {})
-        item.resume_data = data.get('resume_data')
-        item.file_extension = data.get('file_extension', "")
-        return item
-        
-    def _get_extension(self, filename):
-        """Extract or determine file extension from filename"""
-        # Comprehensive list of file extensions
-        video_exts = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.ts']
-        audio_exts = ['.mp3', '.flac', '.wav', '.aac', '.ogg', '.m4a', '.wma', '.opus']
-        archive_exts = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tar.gz', '.tar.bz2']
-        image_exts = ['.iso', '.img', '.dmg', '.nrg', '.mdf', '.bin']
-        document_exts = ['.pdf', '.doc', '.docx', '.epub', '.mobi']
-        app_exts = ['.apk', '.exe', '.msi', '.deb', '.rpm', '.appimage']
-        
-        all_exts = video_exts + audio_exts + archive_exts + image_exts + document_exts + app_exts
-        
-        # Check if filename already has a known extension
-        if '.' in filename:
-            parts = filename.lower().split('.')
-            # Check for compound extensions like .tar.gz
-            if len(parts) >= 3:
-                compound_ext = '.' + '.'.join(parts[-2:])
-                if compound_ext in all_exts:
-                    return compound_ext
-            # Check for single extension
-            ext = '.' + parts[-1]
-            if ext in all_exts:
-                return ext
-        
-        # Determine by content keywords
-        name_lower = filename.lower()
-        
-        # APK files
-        if 'apk' in name_lower or 'android' in name_lower:
-            return '.apk'
-        
-        # Video files
-        if any(keyword in name_lower for keyword in ['movie', '1080p', '720p', '4k', 'bluray', 'web-dl', 'hdtv', 'webrip', 'brrip']):
-            return '.mkv'
-        
-        # Audio files
-        if any(keyword in name_lower for keyword in ['album', 'flac', 'mp3', 'music', 'discography']):
-            return '.mp3'
-        
-        # OS Images
-        if any(keyword in name_lower for keyword in ['ubuntu', 'linux', 'windows', 'iso', 'fedora', 'debian', 'arch']):
-            return '.iso'
-        
-        # Software/Apps
-        if any(keyword in name_lower for keyword in ['.exe', 'setup', 'installer', 'portable']):
-            return '.exe'
-        
-        # Archives
-        if any(keyword in name_lower for keyword in ['pack', 'collection', 'backup']):
-            return '.zip'
-            
-        return ""
-
-    def get_temp_file_path(self):
-        """Get path to the temp file being downloaded"""
-        # Temp file has .part extension while downloading
-        filename = f"{self.name}{self.file_extension}.part"
-        return os.path.join(self.temp_path, filename)
-
-    def get_final_file_path(self):
-        """Get the final destination path with proper extension"""
-        filename = f"{self.name}{self.file_extension}"
-        return os.path.join(self.save_path, filename)
+# ... (skip to init)
 
 class DownloadManager:
     def __init__(self, settings_manager):
         self.settings_manager = settings_manager
-        self.base_path = self.settings_manager.get('download_folder', os.path.join(os.path.expanduser("~"), "Downloads", "TorrentSearch"))
-        self.temp_path = self.settings_manager.get('temp_folder', os.path.join(self.base_path, "temp"))
+        self.base_path = self.settings_manager.get('download_folder', os.path.join(os.path.expanduser("~"), "Downloads", "SwiftSeed Download"))
+        
+        # Use system temp directory for metadata fetching to avoid cluttering Downloads
+        system_temp = os.path.join(tempfile.gettempdir(), "SwiftSeed")
+        self.temp_path = self.settings_manager.get('temp_folder', system_temp)
         
         # Create directories if they don't exist
         os.makedirs(self.base_path, exist_ok=True)
@@ -347,32 +197,148 @@ class DownloadManager:
             traceback.print_exc()
             return None
 
-    def add_download(self, torrent, selected_files=None):
-        """Add a new download from torrent object using aria2"""
+    def add_download(self, torrent, selected_files=None, download_path=None):
+        """Add a new download from torrent object using aria2
+        
+        Args:
+            torrent: The torrent object with name, magnet, etc.
+            selected_files: Optional list of file indices to download
+            download_path: Optional custom download path for this specific download
+        """
         try:
             print(f"=== add_download called for: {torrent.name} ===")
+            
+            # Use custom download path if provided, otherwise use base_path
+            effective_base_path = download_path if download_path else self.base_path
+            
+            # Ensure the download path exists
+            if download_path:
+                os.makedirs(download_path, exist_ok=True)
+            
+            # Check if torrent has a local file_path (downloaded by provider like E-Hentai)
+            local_torrent_path = getattr(torrent, 'file_path', None)
+            if local_torrent_path and os.path.exists(local_torrent_path):
+                try:
+                    print(f"Detected local .torrent file: {local_torrent_path}")
+                    import base64
+                    with open(local_torrent_path, 'rb') as f:
+                        torrent_content = base64.b64encode(f.read()).decode('utf-8')
+                    
+                    save_dir = effective_base_path if selected_files is not None else self.temp_path
+                    options = {"dir": save_dir}
+                    
+                    if selected_files is not None and selected_files:
+                        indexes = [str(i + 1) for i in selected_files]
+                        options["select-file"] = ",".join(indexes)
+                    
+                    result = self._aria2_rpc_call("aria2.addTorrent", [torrent_content, [], options])
+                    
+                    if result and "result" in result:
+                        gid = result["result"]
+                        print(f"✓ Local torrent file added with GID: {gid}")
+                        
+                        # Get magnet for history/re-add purposes
+                        magnet_link = torrent.get_magnet_uri() if hasattr(torrent, 'get_magnet_uri') else getattr(torrent, 'magnet', '')
+                        
+                        item = DownloadItem(
+                            id=gid,
+                            name=torrent.name,
+                            size_str=torrent.size if hasattr(torrent, 'size') else "0 B",
+                            magnet=magnet_link or '',
+                            save_path=save_dir,
+                            temp_path=self.temp_path,
+                            gid=gid
+                        )
+                        if selected_files: item.selected_files = selected_files
+                        with self.lock: self._downloads[gid] = item
+                        self.download_history_manager.add_download(item)
+                        self._notify_listeners()
+                        
+                        # Clean up the temp torrent file
+                        try:
+                            os.remove(local_torrent_path)
+                            print(f"Cleaned up temp torrent file: {local_torrent_path}")
+                        except Exception as clean_err:
+                            print(f"Failed to clean up temp file: {clean_err}")
+                        
+                        return item
+                    else:
+                        print(f"Failed to add local torrent file: {result}")
+                except Exception as ex:
+                    print(f"Error handling local .torrent file: {ex}")
+                    import traceback
+                    traceback.print_exc()
             
             # Get magnet link safely
             magnet_link = torrent.get_magnet_uri() if hasattr(torrent, 'get_magnet_uri') else getattr(torrent, 'magnet', None)
             
             if not magnet_link:
                 print("Error: No magnet link found for torrent")
-                return False
+                return None
             
             print(f"Attempting to add magnet link: {magnet_link}")
             
-            # Prepare parameters for aria2
+            # Handle .torrent file URLs (like Internet Archive)
+            if magnet_link.startswith('http') and (magnet_link.endswith('.torrent') or '.torrent?' in magnet_link):
+                try:
+                    print("Detected .torrent file URL. Downloading and adding via addTorrent...")
+                    import base64
+                    response = requests.get(magnet_link, verify=False, timeout=30)
+                    if response.status_code == 200:
+                         torrent_content = base64.b64encode(response.content).decode('utf-8')
+                         
+                         save_dir = effective_base_path if selected_files is not None else self.temp_path
+                         options = {"dir": save_dir}
+                         
+                         if selected_files is not None and selected_files:
+                             indexes = [str(i + 1) for i in selected_files]
+                             options["select-file"] = ",".join(indexes)
+                             
+                         result = self._aria2_rpc_call("aria2.addTorrent", [torrent_content, [], options])
+                         
+                         if result and "result" in result:
+                             gid = result["result"]
+                             print(f"✓ Torrent file added with GID: {gid}")
+                             
+                             item = DownloadItem(
+                                 id=gid,
+                                 name=torrent.name,
+                                 size_str=torrent.size if hasattr(torrent, 'size') else "0 B",
+                                 magnet=magnet_link,
+                                 save_path=save_dir,
+                                 temp_path=self.temp_path,
+                                 gid=gid
+                             )
+                             if selected_files: item.selected_files = selected_files
+                             with self.lock: self._downloads[gid] = item
+                             self.download_history_manager.add_download(item)
+                             self._notify_listeners()
+                             return item
+                except Exception as ex:
+                    print(f"Error handling .torrent URL: {ex}")
+            
+            # Prepare parameters for aria2 (Standard Magnet / URL)
             params = [magnet_link]
+            
+            # Use temp path for initial metadata fetch (when selected_files is None)
+            # Use effective_base_path when files are confirmed (selected_files is not None)
+            save_dir = effective_base_path if selected_files is not None else self.temp_path
             
             # Add options
             options = {
-                "dir": self.base_path
+                "dir": save_dir
             }
             
-            # If specific files are selected, we'll handle that after the torrent is added
-            if selected_files:
-                # We'll set file priorities after the torrent is added
-                pass
+            # If specific files are selected, set configurations
+            if selected_files is not None:
+                # Convert 0-based indices to Aria2 1-based indices string
+                # selected_files is list of indices (integers)
+                if selected_files:
+                    indexes = [str(i + 1) for i in selected_files]
+                    options["select-file"] = ",".join(indexes)
+                else:
+                    # If empty list passed, select nothing (or maybe valid logic prevents this)
+                    pass
             
             # Add the download to aria2
             result = self._aria2_rpc_call("aria2.addUri", [params, options])
@@ -385,9 +351,9 @@ class DownloadManager:
                 item = DownloadItem(
                     id=gid,  # Use GID as ID
                     name=torrent.name,
-                    size_str=torrent.size,
+                    size_str=torrent.size if hasattr(torrent, 'size') else "0 B",
                     magnet=magnet_link,
-                    save_path=self.base_path,
+                    save_path=save_dir,
                     temp_path=self.temp_path,
                     gid=gid
                 )
@@ -395,7 +361,6 @@ class DownloadManager:
                 # Store selected files if any
                 if selected_files:
                     item.selected_files = selected_files
-                    # Set file priorities after metadata is loaded
                 
                 with self.lock:
                     self._downloads[gid] = item
@@ -404,7 +369,10 @@ class DownloadManager:
                 self.download_history_manager.add_download(item)
                 
                 self._notify_listeners()
-                return True
+                
+                # Verify priorities if race condition happened (optional, aria2 select-file is usually reliable)
+                
+                return item # Return Item object instead of True for better usability
             else:
                 print(f"Error adding download: {result}")
                 return False
@@ -414,6 +382,44 @@ class DownloadManager:
             import traceback
             traceback.print_exc()
             return False
+
+    def finalize_download(self, download_id, selected_indices, download_path=None):
+        """Move download from temp to final, applying file selection
+        
+        Args:
+            download_id: ID of the download to finalize
+            selected_indices: List of file indices to download
+            download_path: Optional custom download path for this specific download
+        """
+        print(f"Finalizing download {download_id}...")
+        with self.lock:
+             old_item = self._downloads.get(download_id)
+        
+        if not old_item or not old_item.magnet:
+             print(f"Cannot finalize download {download_id}: Item or magnet missing")
+             return None
+        
+        magnet = old_item.magnet
+        name = old_item.name
+        size_str = old_item.size_str
+        
+        # Stop and remove temp download (including files to clean temp)
+        self.remove_download(download_id, delete_files=True)
+        
+        # Construct simple object to emulate torrent interface
+        class SimpleTorrent:
+            def __init__(self, n, m, s):
+                self.name = n
+                self.magnet = m
+                self.size = s
+            def get_magnet_uri(self): return self.magnet
+        
+        t = SimpleTorrent(name, magnet, size_str)
+        
+        # Call add_download with selected files and custom path
+        new_item = self.add_download(t, selected_files=selected_indices, download_path=download_path)
+        
+        return new_item
 
     def pause_download(self, download_id):
         """Pause a download"""

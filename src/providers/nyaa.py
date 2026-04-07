@@ -20,6 +20,7 @@ class NyaaProvider(SearchProvider):
             specialized_category=Category.ANIME,
             safety_status=SearchProviderSafetyStatus.SAFE,
             enabled_by_default=True,
+            language="Multi",
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:

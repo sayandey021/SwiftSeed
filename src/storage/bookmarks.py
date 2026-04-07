@@ -36,10 +36,20 @@ class BookmarkManager:
                 upload_date TEXT,
                 category TEXT,
                 description_url TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sort_order INTEGER DEFAULT 0
             )
         ''')
         
+        # Check if sort_order column exists (migration for existing DBs)
+        cursor.execute("PRAGMA table_info(bookmarks)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'sort_order' not in columns:
+            print("Migrating database: adding sort_order column")
+            cursor.execute("ALTER TABLE bookmarks ADD COLUMN sort_order INTEGER DEFAULT 0")
+            # Initialize sort_order based on id to maintain insertion order (newest first)
+            cursor.execute("UPDATE bookmarks SET sort_order = id")
+            
         conn.commit()
         conn.close()
     
@@ -49,10 +59,16 @@ class BookmarkManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # Get max sort_order
+            cursor.execute("SELECT MAX(sort_order) FROM bookmarks")
+            result = cursor.fetchone()
+            max_order = result[0] if result[0] is not None else 0
+            next_order = max_order + 1
+            
             cursor.execute('''
                 INSERT INTO bookmarks 
-                (name, magnet_uri, size, seeders, peers, provider, upload_date, category, description_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (name, magnet_uri, size, seeders, peers, provider, upload_date, category, description_url, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 torrent.name,
                 torrent.get_magnet_uri(),
@@ -63,6 +79,7 @@ class BookmarkManager:
                 torrent.upload_date,
                 str(torrent.category) if torrent.category else None,
                 torrent.description_url,
+                next_order
             ))
             
             conn.commit()
@@ -111,7 +128,7 @@ class BookmarkManager:
             
             cursor.execute('''
                 SELECT * FROM bookmarks 
-                ORDER BY created_at DESC
+                ORDER BY sort_order DESC
             ''')
             
             bookmarks = [dict(row) for row in cursor.fetchall()]
@@ -136,3 +153,49 @@ class BookmarkManager:
         except Exception as e:
             print(f"Error getting bookmarked names: {e}")
             return set()
+
+    def clear_all(self) -> bool:
+        """Delete all bookmarks."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM bookmarks')
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error clearing bookmarks: {e}")
+            return False
+
+    def reorder_bookmarks(self, old_index: int, new_index: int) -> bool:
+        """
+        Reorder bookmarks based on the display-level old and new indices.
+        Updates all sort_orders in the database.
+        """
+        try:
+            # 1. Get all bookmarks in current order
+            bookmarks = self.get_bookmarks()
+            if not bookmarks or old_index >= len(bookmarks) or new_index >= len(bookmarks):
+                return False
+            
+            # 2. Reorder in-memory list
+            item = bookmarks.pop(old_index)
+            bookmarks.insert(new_index, item)
+            
+            # 3. Update database sort_orders
+            # top of list gets highest sort_order
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Use a descending range to match the ORDER BY sort_order DESC
+            total = len(bookmarks)
+            for i, b in enumerate(bookmarks):
+                new_order = total - i
+                cursor.execute("UPDATE bookmarks SET sort_order = ? WHERE id = ?", (new_order, b['id']))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error reordering bookmarks: {e}")
+            return False

@@ -1,0 +1,11 @@
+[tool.flet]
+name = "SwiftSeed"
+description = "SwiftSeed Torrent Client"
+authors = ["Sayan Dey"]
+version = "2.5"
+
+[tool.flet.windows]
+product-name = "SwiftSeed"
+file-description = "SwiftSeed Torrent Client"
+company-name = "Sayan Dey"
+copyright = "Copyright (c) 2025 Sayan Dey"

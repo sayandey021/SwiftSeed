@@ -10,44 +10,83 @@ from providers.base import SearchProvider, SearchProviderInfo, SearchProviderSaf
 class LeetProvider(SearchProvider):
     """1337x.to torrent search provider."""
     
+    def __init__(self):
+        super().__init__()
+        self.mirrors = [
+            "https://www.1377x.to",
+            "https://1377x.to",
+            "https://1337xx.to",
+            "https://1337x.to",
+            "https://1337x.st",
+            "https://x1337x.ws",
+            "https://x1337x.eu",
+        ]
+        self._current_mirror = self.mirrors[0]
+    
     @property
     def info(self) -> SearchProviderInfo:
         return SearchProviderInfo(
             id="1337x",
             name="1337x",
-            url="https://1337x.to",
+            url=self._current_mirror,
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            safety_reason="Often blocked by ISP - enable manually if you use VPN",
+            enabled_by_default=False,
+            language="Multi",
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
         """Search 1337x for torrents."""
-        # Note: 1337x requires extra steps - search page then detail pages
-        # For simplicity, we'll parse the search results page only
-        url = f"{self.info.url}/search/{query}/1/"
+        # Map our category to 1337x's URL category parameter
+        cat_map = {
+            Category.MOVIES: "Movies",
+            Category.SERIES: "TV",
+            Category.TV: "TV",
+            Category.GAMES: "Games",
+            Category.MUSIC: "Music",
+            Category.APPS: "Apps",
+            Category.ANIME: "Anime",
+            Category.BOOKS: "Books",
+            Category.PORN: "XXX",
+            Category.OTHER: "Other",
+        }
         
-        try:
-            html = self._get(url)
-            if not html:
-                return []
+        cat_slug = cat_map.get(category)
+        
+        # Loop through mirrors until one works
+        for mirror in self.mirrors:
+            self._current_mirror = mirror
             
-            soup = BeautifulSoup(html, 'html.parser')
-            table = soup.select_one('table.table-list tbody')
+            # Using /category-search/ if a category is specified
+            if cat_slug:
+                url = f"{self.info.url}/category-search/{query}/{cat_slug}/1/"
+            else:
+                url = f"{self.info.url}/search/{query}/1/"
             
-            if not table:
-                return []
-            
-            torrents = []
-            for row in table.find_all('tr'):
-                torrent = self._parse_row(row)
-                if torrent:
-                    torrents.append(torrent)
-            
-            return torrents
-        except Exception as e:
-            print(f"1337x search error: {e}")
-            return []
+            try:
+                html = self._get(url)
+                if not html:
+                    continue
+                
+                soup = BeautifulSoup(html, 'html.parser')
+                table = soup.select_one('table.table-list tbody')
+                
+                if not table:
+                    continue
+                
+                torrents = []
+                for row in table.find_all('tr'):
+                    torrent = self._parse_row(row)
+                    if torrent:
+                        torrents.append(torrent)
+                
+                if torrents:
+                    return torrents
+            except Exception as e:
+                print(f"1337x search error on {mirror}: {e}")
+                
+        return []
     
     def _parse_row(self, row) -> Torrent:
         """Parse a table row into a Torrent object."""

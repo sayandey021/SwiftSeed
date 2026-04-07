@@ -44,8 +44,15 @@ class Torrent:
         
         if self.info_hash:
             # Build magnet URI from info hash
-            trackers_str = "&tr=".join(TRACKERS)
-            return f"magnet:?xt=urn:btih:{self.info_hash}&tr={trackers_str}"
+            import urllib.parse
+            trackers_str = "&tr=".join([urllib.parse.quote(t) for t in TRACKERS])
+            
+            # Optionally encode the name if we want to include it for better UI fallback
+            name_param = ""
+            if self.name:
+                name_param = f"&dn={urllib.parse.quote(self.name)}"
+                
+            return f"magnet:?xt=urn:btih:{self.info_hash}{name_param}&tr={trackers_str}"
         
         return ""
     
@@ -57,7 +64,7 @@ class Torrent:
     
     def is_dead(self) -> bool:
         """Check if torrent is dead (no seeders or peers)."""
-        return self.seeders == 0 and self.peers == 0
+        return self.seeders == 0 and self.peers == 0 and self.seeders != -1
     
     def __str__(self):
         return f"{self.name} ({self.size}) - {self.seeders}S/{self.peers}P"
