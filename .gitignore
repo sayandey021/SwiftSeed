@@ -40,5 +40,12 @@ venv.bak/
 test_downloads/
 logs/
 *.log
+academic_debug.log
+icon_error.log
 installer/
 *.spec
+*.tmp
+*.bak
+dump.rdb
+.DS_Store
+Thumbs.db
