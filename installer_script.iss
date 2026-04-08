@@ -2,7 +2,7 @@
 ; This creates a professional Windows installer
 
 #define MyAppName "SwiftSeed"
-#define MyAppVersion "2.0.2"
+#define MyAppVersion "2.5.0"
 #define MyAppPublisher "SwiftSeed Team"
 #define MyAppURL "https://github.com/sayandey021/SwiftSeed"
 #define MyAppExeName "SwiftSeed.exe"

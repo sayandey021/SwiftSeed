@@ -1,5 +1,33 @@
 # Release Notes
 
+## Version 2.5 - April 2026
+
+### 🎯 Highlights
+SwiftSeed v2.5 introduces a major cleanup of the project structure for better maintainability and a professional look. This release focuses on repository organization, enhanced ignoring of temporary files, and a more stable build process.
+
+### ⚡ Major Features & Improvements
+
+#### 📂 Repository Reorganization
+The project structure has been cleaned up and reorganized to follow industry standards:
+- **`docs/` Folder**: All documentation, guides, and release notes now reside in a dedicated folder.
+- **`scripts/dev/` Folder**: Experimental and development-only scripts (like `apicheck.py`) are moved away from the root directory.
+- **Root Cleanup**: The root directory is now focused and clean, containing only essential project files.
+
+#### 🛡️ Enhanced .gitignore
+Significant improvements to the Git exclusion rules:
+- Added comprehensive patterns for logs, temporary files (`.tmp`, `.bak`), and system artifacts (`.DS_Store`, `Thumbs.db`).
+- Improved handling of build artifacts to prevent repo bloat.
+
+#### 🔧 Version Standardization
+Unified the versioning across all components:
+- Updated `version_info.txt`, `setup.py`, Inno Setup script, and MSIX Manifest to a consistent **2.5.0** release version.
+
+### 📋 Quality of Life
+- **Stability**: Refined the application shutdown process for better session saving.
+- **Docs**: Updated building guides with the new folder paths.
+
+---
+
 ## Version 1.9 - December 2025
 
 ### 🎯 Highlights
