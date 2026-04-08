@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+
+  <!-- 
+    IMPORTANT: Before submitting to Microsoft Store, update these values:
+    1. Get Publisher ID from Partner Center → App Identity
+    2. Get App Name from Partner Center → App Name Reservation
+    3. Update Version number for each submission
+  -->
+
+  <Identity
+    Name="Saayan.SwiftSeedDesktop"
+    Publisher="CN=37E2AF47-D2FC-489C-BDC1-02C989A7B989"
+    Version="2.0.2.0" />
+
+  <Properties>
+    <DisplayName>SwiftSeed Desktop</DisplayName>
+    <PublisherDisplayName>Saayan</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Fast, secure torrent search and download manager. Search multiple providers, download torrents with built-in client. Privacy-focused and ad-free.</Description>
+  </Properties>
+
+  <!-- Windows 10 version 19041 (2004) or higher required -->
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <!-- Supported languages -->
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="SwiftSeed" Executable="SwiftSeed.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="SwiftSeed Desktop"
+        Description="Fast, secure torrent search and download manager"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        
+        <!-- Optional: Wide tile logo -->
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" ShortName="SwiftSeed Desktop">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo"/>
+            <uap:ShowOn Tile="wide310x150Logo"/>
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        
+        <!-- Splash screen shown during app launch -->
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#1a1a2e"/>
+      </uap:VisualElements>
+
+      <!-- File associations (optional) -->
+      <Extensions>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="torrent">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.torrent</uap:FileType>
+            </uap:SupportedFileTypes>
+            <uap:DisplayName>Torrent File</uap:DisplayName>
+            <uap:Logo>Assets\FileLogo.png</uap:Logo>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+
+        <!-- Protocol association for magnet links (optional) -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="magnet">
+            <uap:DisplayName>Magnet Link</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <!-- Capabilities required by the app -->
+  <Capabilities>
+    <!-- Internet access for torrent search -->
+    <Capability Name="internetClient" />
+    
+    <!-- Optional: For torrent seeding/uploading -->
+    <Capability Name="internetClientServer" />
+    
+    <!-- Required for desktop apps (full trust) -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>
+
+<!--
+  ASSET FILES REQUIRED IN Assets FOLDER:
+  
+  1. StoreLogo.png - 400x400 pixels
+     Purpose: Store listing icon
+  
+  2. Square150x150Logo.png - 150x150 pixels
+     Purpose: Medium tile, App list
+  
+  3. Square44x44Logo.png - 44x44 pixels
+     Purpose: App list, notifications
+  
+  4. Wide310x150Logo.png - 310x150 pixels (Optional)
+     Purpose: Wide tile
+  
+  5. SplashScreen.png - 620x300 pixels (Optional)
+     Purpose: Shown during app launch
+  
+  All logos should be PNG format with transparency.
+  
+  TO CREATE THESE ASSETS:
+  1. Use the logos from store/assets/ folder
+  2. Rename/copy them according to names above
+  3. Create Wide310x150Logo.png by resizing logo to 310x150
+  4. Create SplashScreen.png:
+     - 620x300 size
+     - Center the app logo
+     - Use dark background color (#1a1a2e)
+     - Add app name text if desired
+  
+  BEFORE BUILDING MSIX:
+  1. Copy all assets to PackageRoot/Assets/ folder
+  2. Ensure file names match exactly
+  3. Verify sizes are correct
+  4. Test package installation
+-->
