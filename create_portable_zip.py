@@ -26,7 +26,7 @@ def create_portable_package():
         return False
     
     # Output ZIP file
-    zip_name = "SwiftSeed_v1.5_Portable.zip"
+    zip_name = "SwiftSeed_v2.5_Portable.zip"
     zip_path = dist_dir / zip_name
     
     # Remove old zip if exists
@@ -48,7 +48,7 @@ def create_portable_package():
             print(f"  ✓ Added README.txt")
         else:
             # Create a simple readme inside the zip
-            readme_content = """SwiftSeed v1.5 - Portable Version
+            readme_content = """SwiftSeed v2.5 - Portable Version
 
 HOW TO USE:
 1. Extract this ZIP file to any folder

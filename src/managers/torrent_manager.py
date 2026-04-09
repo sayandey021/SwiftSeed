@@ -12,52 +12,136 @@ def debug_log(msg):
 # CRITICAL: Fix DLL load errors for frozen apps on Windows
 if os.name == 'nt' and getattr(sys, 'frozen', False):
     import ctypes
+    import ctypes.wintypes
     
     # Determine base directory
     base_dir = os.path.dirname(sys.executable)
+    internal_dir = os.path.join(base_dir, '_internal')
     
-    # Critical DLL paths
-    dll_paths = [
-        base_dir,  # Root folder
-        os.path.join(base_dir, '_internal'),
-        os.path.join(base_dir, '_internal', 'libtorrent'),
+    # All directories where DLLs may reside (order matters - more specific first)
+    dll_search_dirs = [
+        os.path.join(internal_dir, 'libtorrent'),
+        internal_dir,
+        base_dir,
     ]
     
-    # METHOD 1: Add to PATH environment variable (most compatible)
+    # METHOD 1: Prepend to PATH (most compatible, works on all Windows)
     existing_path = os.environ.get('PATH', '')
-    new_paths = [p for p in dll_paths if os.path.exists(p) and p not in existing_path]
+    new_paths = [p for p in dll_search_dirs if os.path.exists(p) and p not in existing_path]
     if new_paths:
         os.environ['PATH'] = os.pathsep.join(new_paths) + os.pathsep + existing_path
     
-    # METHOD 2: Use add_dll_directory (Windows 10+)
-    for path in dll_paths:
+    # METHOD 2: Use os.add_dll_directory (Python 3.8+, Windows 10+)
+    # This is the PREFERRED method for Python 3.8+ as Python no longer uses PATH for DLL search
+    for path in dll_search_dirs:
         if os.path.exists(path):
             try:
                 os.add_dll_directory(path)
             except (AttributeError, OSError):
                 pass
     
-    # METHOD 3: Preload critical DLLs to ensure they're found
-    critical_dlls = [
-        'zlib.dll',
-        'libcrypto-1_1.dll', 
-        'libssl-1_1.dll',
-        'msvcp140.dll',
+    # METHOD 3: Preload critical DLLs explicitly
+    # The libtorrent .pyd links against OpenSSL and MSVC runtime DLLs.
+    # Different builds may use different OpenSSL naming conventions, so we
+    # try ALL known variants to ensure compatibility.
+    critical_dll_patterns = [
+        # MSVC runtime (required by all C++ extensions)
         'vcruntime140.dll',
-        'vcruntime140_1.dll'
+        'vcruntime140_1.dll',
+        'msvcp140.dll',
+        'concrt140.dll',
+        # OpenSSL 3.x variants (Python 3.13 typically uses OpenSSL 3.x)
+        'libcrypto-3.dll',
+        'libssl-3.dll',
+        'libcrypto-3-x64.dll',
+        'libssl-3-x64.dll',
+        # OpenSSL 1.1 variants (older libtorrent builds)
+        'libcrypto-1_1.dll',
+        'libssl-1_1.dll',
+        'libcrypto-1_1-x64.dll',
+        'libssl-1_1-x64.dll',
+        # zlib
+        'zlib.dll',
+        'zlib1.dll',
+        # Boost DLLs (if dynamically linked)
+        'boost_python313-vc143-mt-x64-*.dll',
+        'boost_system-vc143-mt-x64-*.dll',
     ]
     
-    for dll_name in critical_dlls:
-        for search_path in dll_paths:
-            dll_full_path = os.path.join(search_path, dll_name)
+    # Also dynamically discover ALL .dll files in the _internal directory
+    # This catches any DLLs we didn't think to list explicitly
+    all_dll_names = set()
+    for search_dir in dll_search_dirs:
+        if os.path.exists(search_dir):
+            try:
+                for f in os.listdir(search_dir):
+                    if f.lower().endswith('.dll'):
+                        all_dll_names.add(f)
+            except OSError:
+                pass
+    
+    # Merge: start with critical DLLs (in priority order), then add any others
+    dlls_to_load = []
+    loaded_names = set()
+    
+    # Add critical DLLs first (in specific order to handle dependencies)
+    for pattern in critical_dll_patterns:
+        if '*' in pattern:
+            # Glob pattern - match against discovered DLLs
+            import fnmatch
+            for dll_name in sorted(all_dll_names):
+                if fnmatch.fnmatch(dll_name.lower(), pattern.lower()) and dll_name.lower() not in loaded_names:
+                    dlls_to_load.append(dll_name)
+                    loaded_names.add(dll_name.lower())
+        else:
+            if pattern.lower() not in loaded_names:
+                dlls_to_load.append(pattern)
+                loaded_names.add(pattern.lower())
+    
+    # Add remaining discovered DLLs (non-system ones that aren't already listed)
+    system_dll_prefixes = ('api-ms-', 'ext-ms-', 'kernel32', 'user32', 'advapi32', 'ntdll')
+    for dll_name in sorted(all_dll_names):
+        if dll_name.lower() not in loaded_names and not dll_name.lower().startswith(system_dll_prefixes):
+            dlls_to_load.append(dll_name)
+            loaded_names.add(dll_name.lower())
+    
+    # Preload all DLLs
+    for dll_name in dlls_to_load:
+        for search_dir in dll_search_dirs:
+            dll_full_path = os.path.join(search_dir, dll_name)
             if os.path.exists(dll_full_path):
                 try:
-                    ctypes.CDLL(dll_full_path)
+                    ctypes.WinDLL(dll_full_path)
                 except Exception:
                     pass
                 break
 
-import libtorrent as lt
+try:
+    import libtorrent as lt
+except ImportError as e:
+    if getattr(sys, 'frozen', False):
+        # Detailed diagnostics for frozen apps
+        _diag_lines = [f"CRITICAL: Failed to import libtorrent: {e}"]
+        _base = os.path.dirname(sys.executable)
+        _int = os.path.join(_base, '_internal')
+        _lt_dir = os.path.join(_int, 'libtorrent')
+        
+        # Show libtorrent directory contents
+        if os.path.exists(_lt_dir):
+            _diag_lines.append(f"libtorrent dir contents: {os.listdir(_lt_dir)}")
+        else:
+            _diag_lines.append(f"libtorrent dir NOT FOUND at {_lt_dir}")
+        
+        # Show all DLLs in _internal that could be relevant
+        if os.path.exists(_int):
+            _dlls = [f for f in os.listdir(_int) if f.lower().endswith('.dll')]
+            _diag_lines.append(f"DLLs in _internal ({len(_dlls)}): {_dlls}")
+        
+        # Show PATH
+        _diag_lines.append(f"PATH: {os.environ.get('PATH', 'NOT SET')[:500]}")
+        
+        print('\n'.join(_diag_lines))
+    raise
 
 class DownloadStatus(Enum):
     DOWNLOADING = "Downloading"

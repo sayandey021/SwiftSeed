@@ -40,12 +40,17 @@ def main():
         return False
     
     # Step 3: Check if exe exists
-    exe_path = os.path.join(dist_dir, "SwiftSeed.exe")
+    # In --onedir mode, the exe is inside a folder with the application name
+    exe_path = os.path.join(dist_dir, "SwiftSeed", "SwiftSeed.exe")
+    if not os.path.exists(exe_path):
+        # Fallback to root just in case
+        exe_path = os.path.join(dist_dir, "SwiftSeed.exe")
+        
     if not os.path.exists(exe_path):
         print(f"✗ Executable not found at {exe_path}")
         return False
     
-    print(f"✓ Portable executable: {exe_path}")
+    print(f"✓ Executable: {exe_path}")
     print(f"  Size: {os.path.getsize(exe_path) / (1024*1024):.2f} MB")
     
     # Step 4: Build installer with Inno Setup
