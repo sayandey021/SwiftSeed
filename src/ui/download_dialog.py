@@ -232,7 +232,7 @@ class DownloadDialog(ft.AlertDialog):
             expand=True,
             border_color=ft.Colors.AMBER_400 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.AMBER_700,
             focused_border_color=ft.Colors.AMBER_600,
-            content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            content_padding=ft.Padding.symmetric(horizontal=8, vertical=4),
             on_change=on_path_change,
             hint_text="Enter download path...",
         )
@@ -260,7 +260,7 @@ class DownloadDialog(ft.AlertDialog):
             expand=True,
             read_only=True,
             border_color=ft.Colors.GREY_400,
-            content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            content_padding=ft.Padding.symmetric(horizontal=8, vertical=4),
         )
         
         def copy_magnet(_):
@@ -279,7 +279,7 @@ class DownloadDialog(ft.AlertDialog):
                                color=ft.Colors.GREY_500 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
                         ft.Text(self.torrent.name, size=13, weight=ft.FontWeight.BOLD, selectable=True),
                     ], spacing=3),
-                    padding=ft.padding.only(bottom=10),
+                    padding=ft.Padding.only(bottom=10),
                 ),
                 
                 ft.Divider(height=1),
@@ -357,7 +357,7 @@ class DownloadDialog(ft.AlertDialog):
             padding=12,
             bgcolor=ft.Colors.AMBER_50 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.with_opacity(0.15, ft.Colors.AMBER),
             border_radius=10,
-            border=ft.border.all(1, ft.Colors.AMBER_300 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.AMBER_700),
+            border=ft.Border.all(1, ft.Colors.AMBER_300 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.AMBER_700),
             width=320,
         )
         
@@ -430,7 +430,7 @@ class DownloadDialog(ft.AlertDialog):
                         ],
                         width=110,
                         text_size=11,
-                        content_padding=ft.padding.symmetric(horizontal=6, vertical=0),
+                        content_padding=ft.Padding.symmetric(horizontal=6, vertical=0),
                         dense=True,
                         border_width=0,
                         border_color=ft.Colors.TRANSPARENT,
@@ -482,7 +482,7 @@ class DownloadDialog(ft.AlertDialog):
                                    color=ft.Colors.GREY_500),
                             priority_dropdown,
                         ], alignment=ft.MainAxisAlignment.START, spacing=5, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=ft.padding.only(left=5, top=2, bottom=2),
+                        padding=ft.Padding.only(left=5, top=2, bottom=2),
                     )
                     items.append(row)
                 else:
@@ -551,7 +551,7 @@ class DownloadDialog(ft.AlertDialog):
                                 ft.Text(folder_key, weight=ft.FontWeight.BOLD, size=12, expand=True),
                             ], spacing=5),
                             controls=children_ui,
-                            controls_padding=ft.padding.only(left=15),
+                            controls_padding=ft.Padding.only(left=15),
                         )
                         return expansion_tile
 
@@ -565,7 +565,7 @@ class DownloadDialog(ft.AlertDialog):
             controls=tree_items,
             expand=True,
             spacing=1,
-            padding=ft.padding.only(left=5, right=10, top=5, bottom=5)
+            padding=ft.Padding.only(left=5, right=10, top=5, bottom=5)
         )
         
         # Warning about metadata (only show if no real files)
@@ -593,7 +593,7 @@ class DownloadDialog(ft.AlertDialog):
                 ft.Container(
                     content=file_list,
                     expand=True,
-                    border=ft.border.all(1, ft.Colors.GREY_300 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_800),
+                    border=ft.Border.all(1, ft.Colors.GREY_300 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_800),
                     border_radius=8,
                 ),
             ], spacing=8),

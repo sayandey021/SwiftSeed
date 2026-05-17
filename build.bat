@@ -56,7 +56,7 @@ echo.
 echo ========================================================================
 echo  Building Portable Application...
 echo ========================================================================
-python build_complete.py
+python build_exe.py
 if %errorlevel% neq 0 (
     echo.
     echo  BUILD FAILED!
@@ -171,14 +171,11 @@ if not exist "..\store\AppxManifest_TEMPLATE.xml" (
 )
 copy /Y "..\store\AppxManifest_TEMPLATE.xml" "%PKG_ROOT%\AppxManifest.xml" >nul
 
-echo    Updating executable icon...
-if exist "rcedit.exe" (
-    "rcedit.exe" "%PKG_ROOT%\SwiftSeed.exe" --set-icon "src\assets\icon.ico"
-)
+echo    Skipping rcedit on SwiftSeed.exe to prevent PyInstaller PKG corruption.
 
 echo    Preparing logo assets...
 REM Use PowerShell script to create properly sized MSIX assets from icon.ico
-powershell -ExecutionPolicy Bypass -File "create_msix_assets.ps1" -IconPath "src\assets\icon.ico" -OutputDir "%PKG_ASSETS%"
+powershell -ExecutionPolicy Bypass -File "create_msix_assets.ps1" -IconPath "src\assets\icon.ico" -FileIconPath "src\assets\file_256_preview.png" -OutputDir "%PKG_ASSETS%"
 if %errorlevel% neq 0 (
     echo   ✗ Failed to create MSIX assets
     exit /b 1

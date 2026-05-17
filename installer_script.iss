@@ -67,7 +67,7 @@ Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Fil
 [Registry]
 Root: HKA; Subkey: "Software\Classes\.torrent"; ValueType: string; ValueName: ""; ValueData: "SwiftSeed.Torrent"; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\SwiftSeed.Torrent"; ValueType: string; ValueName: ""; ValueData: "Torrent File"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Classes\SwiftSeed.Torrent\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\file.ico"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\SwiftSeed.Torrent\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\_internal\assets\file.ico,0"; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\SwiftSeed.Torrent\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletevalue
 
 [Run]

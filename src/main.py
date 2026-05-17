@@ -5,6 +5,17 @@ import webbrowser
 import time
 import os
 import sys
+import json
+
+if sys.platform == 'win32':
+    try:
+        import win32gui
+        import win32con
+        import win32process
+        import ctypes
+        import ctypes.wintypes
+    except ImportError:
+        pass
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -17,7 +28,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def debug_log(msg):
-    pass
+    print(f"DEBUG: {msg}")
+    sys.stdout.flush()
 
 # Import existing backend logic
 from models.category import Category
@@ -39,8 +51,7 @@ class TorrentSearchApp:
         self.page.theme_mode = ft.ThemeMode.DARK
         
         # Set window icon
-        icon_path = resource_path(os.path.join("assets", "icon.ico"))
-        self.page.window.icon = icon_path
+        self.page.window.icon = "icon.png"
         
         # Explicitly set window title bar (ensures taskbar shows correct name)
         self.page.window.title_bar_hidden = False
@@ -48,13 +59,13 @@ class TorrentSearchApp:
 
         # Window configuration for glass theme
 
-        self.page.window.width = 1200
+        self.page.window.width = 1280
 
-        self.page.window.height = 800
+        self.page.window.height = 720
 
-        self.page.window.min_width = 800
+        self.page.window.min_width = 960
 
-        self.page.window.min_height = 600
+        self.page.window.min_height = 540
         
         # System Tray Setup
         self.page.window.prevent_close = True
@@ -70,13 +81,94 @@ class TorrentSearchApp:
         self.page.window.on_event = self._on_window_event # Generic window events
         self.tray_icon = None  # Will be initialized after UI setup
         
-        # Force window icon using Win32 API (Aggressive Mode)
+        # Force window icon AND taskbar branding using Win32 API
         if sys.platform == 'win32':
-            def force_icon_aggressive():
+            def force_icon_and_branding():
                 try:
-                    import win32gui
-                    import win32con
                     import time
+                    import ctypes
+                    import ctypes.wintypes
+                    import comtypes
+                    from comtypes import GUID, HRESULT, COMMETHOD
+                    
+                    # Get our own process ID — only brand windows belonging to us
+                    my_pid = os.getpid()
+                    
+                    # --- COM definitions for IPropertyStore ---
+                    # These let us set per-window AppUserModelID and Relaunch properties
+                    # which control the taskbar right-click menu name and icon.
+                    
+                    class PROPERTYKEY(ctypes.Structure):
+                        _fields_ = [
+                            ('fmtid', GUID),
+                            ('pid', ctypes.wintypes.DWORD),
+                        ]
+                    
+                    # Property keys for AppUserModel
+                    # {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}
+                    _AUMID_FMTID = GUID('{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}')
+                    PKEY_AppUserModel_ID = PROPERTYKEY(_AUMID_FMTID, 5)
+                    PKEY_AppUserModel_RelaunchCommand = PROPERTYKEY(_AUMID_FMTID, 2)
+                    PKEY_AppUserModel_RelaunchDisplayNameResource = PROPERTYKEY(_AUMID_FMTID, 4)
+                    PKEY_AppUserModel_RelaunchIconResource = PROPERTYKEY(_AUMID_FMTID, 3)
+                    
+                    # PROPVARIANT for VT_LPWSTR (string values)
+                    VT_LPWSTR = 31
+                    class PROPVARIANT(ctypes.Structure):
+                        _fields_ = [
+                            ('vt', ctypes.wintypes.WORD),
+                            ('reserved1', ctypes.wintypes.WORD),
+                            ('reserved2', ctypes.wintypes.WORD),
+                            ('reserved3', ctypes.wintypes.WORD),
+                            ('pwszVal', ctypes.wintypes.LPWSTR),
+                            ('padding', ctypes.c_void_p),
+                        ]
+                    
+                    # IPropertyStore COM interface
+                    class IPropertyStore(comtypes.IUnknown):
+                        _iid_ = GUID('{886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}')
+                        _methods_ = [
+                            COMMETHOD([], HRESULT, 'GetCount',
+                                      (['out'], ctypes.POINTER(ctypes.wintypes.DWORD), 'cProps')),
+                            COMMETHOD([], HRESULT, 'GetAt',
+                                      (['in'], ctypes.wintypes.DWORD, 'iProp'),
+                                      (['out'], ctypes.POINTER(PROPERTYKEY), 'pkey')),
+                            COMMETHOD([], HRESULT, 'GetValue',
+                                      (['in'], ctypes.POINTER(PROPERTYKEY), 'key'),
+                                      (['out'], ctypes.POINTER(PROPVARIANT), 'pv')),
+                            COMMETHOD([], HRESULT, 'SetValue',
+                                      (['in'], ctypes.POINTER(PROPERTYKEY), 'key'),
+                                      (['in'], ctypes.POINTER(PROPVARIANT), 'propvar')),
+                            COMMETHOD([], HRESULT, 'Commit'),
+                        ]
+                    
+                    # SHGetPropertyStoreForWindow
+                    _SHGetPropertyStoreForWindow = ctypes.windll.shell32.SHGetPropertyStoreForWindow
+                    _SHGetPropertyStoreForWindow.argtypes = [
+                        ctypes.wintypes.HWND,
+                        ctypes.POINTER(GUID),
+                        ctypes.POINTER(ctypes.POINTER(IPropertyStore)),
+                    ]
+                    _SHGetPropertyStoreForWindow.restype = HRESULT
+                    
+                    def set_window_property(hwnd, pkey, value_str):
+                        """Set a string property on a window's property store."""
+                        ps = ctypes.POINTER(IPropertyStore)()
+                        iid = IPropertyStore._iid_
+                        hr = _SHGetPropertyStoreForWindow(hwnd, ctypes.byref(iid), ctypes.byref(ps))
+                        if hr != 0:
+                            return False
+                        try:
+                            pv = PROPVARIANT()
+                            pv.vt = VT_LPWSTR
+                            pv.pwszVal = value_str
+                            ps.SetValue(ctypes.byref(pkey), ctypes.byref(pv))
+                            ps.Commit()
+                            return True
+                        finally:
+                            ps.Release()
+                    
+                    # --- End COM definitions ---
                     
                     log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon_debug.log")
                     
@@ -86,13 +178,15 @@ class TorrentSearchApp:
                                 f.write(f"{time.strftime('%H:%M:%S')} - {msg}\n")
                         except: pass
 
-                    log("Starting aggressive icon enforcement...")
+                    log("Starting aggressive icon + branding enforcement...")
                     
                     # Get absolute path to icon
                     if getattr(sys, 'frozen', False):
                         base_path = sys._MEIPASS
+                        exe_path = sys.executable  # Path to SwiftSeed.exe
                     else:
                         base_path = os.path.dirname(os.path.abspath(__file__))
+                        exe_path = os.path.abspath(__file__)
                     
                     icon_path = os.path.join(base_path, "assets", "icon.ico")
                     
@@ -112,12 +206,16 @@ class TorrentSearchApp:
 
                     log("Icons loaded successfully")
                     
+                    # Track which windows we've already branded
+                    branded_hwnds = set()
+                    
                     # Keep trying to find and patch the window
+                    start_time = time.time()
                     while True:
                         def callback(hwnd, windows):
                             if win32gui.IsWindowVisible(hwnd):
                                 title = win32gui.GetWindowText(hwnd)
-                                if "SwiftSeed" in title:
+                                if title == "SwiftSeed":
                                     windows.append(hwnd)
                             return True
                         
@@ -125,7 +223,7 @@ class TorrentSearchApp:
                         win32gui.EnumWindows(callback, windows)
                         
                         if windows:
-                            log(f"Found {len(windows)} windows")
+                            log(f"Found {len(windows)} windows (pid={my_pid})")
                         
                         for hwnd in windows:
                             try:
@@ -135,18 +233,40 @@ class TorrentSearchApp:
                                 
                                 # Set class icon
                                 try:
-                                    win32gui.SetClassLong(hwnd, -14, h_icon_large) # GCL_HICON
-                                    win32gui.SetClassLong(hwnd, -34, h_icon_small) # GCL_HICONSM
+                                    win32gui.SetClassLong(hwnd, -14, h_icon_large)  # GCL_HICON
+                                    win32gui.SetClassLong(hwnd, -34, h_icon_small)  # GCL_HICONSM
                                 except:
                                     pass
+                                
+                                # Set AppUserModelID and Relaunch properties on the window
+                                # This overrides the Flet default and tells Windows taskbar
+                                # to show "SwiftSeed" with our icon in the right-click menu
+                                if hwnd not in branded_hwnds:
+                                    try:
+                                        app_id = 'SayanDey.SwiftSeed.TorrentClient.v5'
+                                        set_window_property(hwnd, PKEY_AppUserModel_ID, app_id)
+                                        # PKEY_AppUserModel_RelaunchDisplayNameResource requires an indirect string (e.g. @file,-id)
+                                        # Passing 'SwiftSeed' is invalid and may break taskbar naming. Let Windows use the executable's FileDescription.
+                                        # set_window_property(hwnd, PKEY_AppUserModel_RelaunchDisplayNameResource, 'SwiftSeed')
+                                        set_window_property(hwnd, PKEY_AppUserModel_RelaunchCommand, exe_path)
+                                        set_window_property(hwnd, PKEY_AppUserModel_RelaunchIconResource, icon_path)
+                                        branded_hwnds.add(hwnd)
+                                        log(f"Set AppUserModelID + Relaunch props on hwnd {hwnd}")
+                                        
+
+                                    except Exception as e:
+                                        log(f"Error setting window properties for hwnd {hwnd}: {e}")
                                 
                                 # Force refresh
                                 win32gui.InvalidateRect(hwnd, None, True)
                             except Exception as e:
                                 log(f"Error setting icon for hwnd {hwnd}: {e}")
                         
-                        # Check every 1 second
-                        time.sleep(1)
+                        # Check very frequently for the first 5 seconds to catch the window instantly
+                        if time.time() - start_time < 5.0:
+                            time.sleep(0.05)
+                        else:
+                            time.sleep(1)
                         
                 except Exception as e:
                     try:
@@ -156,7 +276,7 @@ class TorrentSearchApp:
             
             # Run in background thread
             import threading
-            threading.Thread(target=force_icon_aggressive, daemon=True).start()
+            threading.Thread(target=force_icon_and_branding, daemon=True).start()
 
         # Initialize managers
         self.settings_manager = SettingsManager()
@@ -461,22 +581,32 @@ class TorrentSearchApp:
             from ctypes import wintypes
             
             user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
             EnumWindows = user32.EnumWindows
             GetWindowTextW = user32.GetWindowTextW
             GetWindowTextLengthW = user32.GetWindowTextLengthW
+            GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+            IsWindowVisible = user32.IsWindowVisible
+            
+            my_pid = kernel32.GetCurrentProcessId()
             
             WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
             
             results = []
             
             def enum_callback(hwnd, lParam):
-                length = GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buf = ctypes.create_unicode_buffer(length + 1)
-                    GetWindowTextW(hwnd, buf, length + 1)
-                    title = buf.value.lower()
-                    if "swiftseed" in title:
-                        results.append(hwnd)
+                if not IsWindowVisible(hwnd):
+                    return True
+                # Only match windows belonging to OUR process
+                pid = wintypes.DWORD()
+                GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value == my_pid:
+                    length = GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        GetWindowTextW(hwnd, buf, length + 1)
+                        if buf.value:  # Has a title
+                            results.append(hwnd)
                 return True
             
             EnumWindows(WNDENUMPROC(enum_callback), 0)
@@ -582,12 +712,16 @@ class TorrentSearchApp:
                 try:
                     import win32gui
                     import win32con
+                    import win32process
                     my_hwnd = getattr(self, '_cached_hwnd', None)
                     if not my_hwnd:
                         def callback(hwnd, extra):
-                            title = win32gui.GetWindowText(hwnd).lower()
-                            if "swiftseed" in title:
-                                extra.append(hwnd)
+                            # Only match windows belonging to OUR process
+                            _, window_pid = win32process.GetWindowThreadProcessId(hwnd)
+                            if window_pid == os.getpid():
+                                title = win32gui.GetWindowText(hwnd)
+                                if title:
+                                    extra.append(hwnd)
                             return True
                         win_list = []
                         win32gui.EnumWindows(callback, win_list)
@@ -790,6 +924,18 @@ class TorrentSearchApp:
 
     def _on_window_event(self, e):
         """Handle window events - show confirmation dialog on close"""
+        # Log for debugging native drops
+        try:
+            with open("window_events.log", "a") as f:
+                f.write(f"Event: type={e.type}, name={getattr(e, 'name', 'N/A')}, data={e.data}\n")
+        except: pass
+
+        # Check for native drop (some Flet versions pass it here if DragAcceptFiles is active)
+        e_data = str(e.data or "")
+        if e_data.lower().endswith('.torrent') and os.path.exists(e_data):
+            self._open_torrent_file(e_data)
+            return
+            
         # Ignore all events if we are already in the exit sequence
         if getattr(self, '_is_exiting', False):
             return
@@ -1040,6 +1186,7 @@ class TorrentSearchApp:
             traceback.print_exc()
         # Persistent SnackBar for notifications
         self.page.snack_bar = ft.SnackBar(content=ft.Text(""), duration=4000)
+
     def _setup_ui(self):
         # Navigation Rail (Sidebar)
         self.rail = ft.NavigationRail(
@@ -1378,7 +1525,7 @@ class TorrentSearchApp:
             prefix_icon=ft.Icons.SEARCH,
             text_align=ft.TextAlign.LEFT,
             dense=True,
-            content_padding=ft.padding.only(left=20, top=13, right=0, bottom=25),
+            content_padding=ft.Padding.only(left=20, top=13, right=0, bottom=25),
             height=50,
             suffix=ft.Container(
                 content=ft.IconButton(
@@ -1387,7 +1534,7 @@ class TorrentSearchApp:
                     icon_size=18,
                     on_click=lambda e: self._clear_search_field(e)
                 ),
-                padding=ft.padding.only(left=0, top=0, right=15, bottom=0)
+                padding=ft.Padding.only(left=0, top=0, right=15, bottom=0)
             )
         )
         
@@ -1525,7 +1672,7 @@ class TorrentSearchApp:
             content=self.active_filter_count,
             bgcolor=ft.Colors.RED_600,
             border_radius=10,
-            padding=ft.padding.symmetric(horizontal=5, vertical=1),
+            padding=ft.Padding.symmetric(horizontal=5, vertical=1),
             visible=False,
         )
         
@@ -1538,9 +1685,9 @@ class TorrentSearchApp:
             ], spacing=4, tight=True),
             on_click=self._toggle_filters,
             border_radius=8,
-            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.WHITE),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.15, ft.Colors.WHITE)),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.15, ft.Colors.WHITE)),
             visible=False,  # Hidden until search results
             animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
         )
@@ -1557,7 +1704,7 @@ class TorrentSearchApp:
                 ft.Container(
                     height=1,
                     bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
-                    margin=ft.margin.symmetric(vertical=4),
+                    margin=ft.Margin.symmetric(vertical=4),
                 ),
                 # Category filters
                 ft.Row([
@@ -1568,7 +1715,7 @@ class TorrentSearchApp:
                 ft.Container(
                     height=1,
                     bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
-                    margin=ft.margin.symmetric(vertical=4),
+                    margin=ft.Margin.symmetric(vertical=4),
                 ),
                 # Provider filters
                 ft.Row([
@@ -1579,7 +1726,7 @@ class TorrentSearchApp:
                 ft.Container(
                     height=1,
                     bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
-                    margin=ft.margin.symmetric(vertical=4),
+                    margin=ft.Margin.symmetric(vertical=4),
                 ),
                 # Range filters
                 ft.Row([
@@ -1595,10 +1742,10 @@ class TorrentSearchApp:
                     self.reset_filters_btn,
                 ]),
             ], spacing=6, tight=True),
-            padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
             border_radius=10,
             bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.WHITE),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.WHITE)),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.WHITE)),
             visible=False,  # Collapsed by default
             animate=ft.Animation(250, ft.AnimationCurve.EASE_OUT),
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
@@ -1633,10 +1780,10 @@ class TorrentSearchApp:
                     weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_400,
                     color=ft.Colors.PRIMARY if is_selected else ft.Colors.GREY_400,
                 ),
-                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=6),
                 border_radius=0,
                 bgcolor=ft.Colors.TRANSPARENT,
-                border=ft.border.only(
+                border=ft.Border.only(
                     bottom=ft.BorderSide(2, ft.Colors.PRIMARY) if is_selected else ft.BorderSide(0, ft.Colors.TRANSPARENT)
                 ),
                 on_click=lambda e, idx=index: self._select_tab(idx),
@@ -1753,7 +1900,7 @@ class TorrentSearchApp:
             content=self.draggable_tabs,
             height=45,
             padding=0,
-            border=ft.border.only(bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.2, ft.Colors.GREY_600))),
+            border=ft.Border.only(bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.2, ft.Colors.GREY_600))),
         )
         
         # Content container for selected tab
@@ -1984,13 +2131,13 @@ class TorrentSearchApp:
         if e.data == "true":  # Hover enter
             if not is_selected:
                 container.bgcolor = ft.Colors.with_opacity(0.05, ft.Colors.PRIMARY)
-                container.border = ft.border.only(
+                container.border = ft.Border.only(
                     bottom=ft.BorderSide(2, ft.Colors.with_opacity(0.5, ft.Colors.PRIMARY))
                 )
         else:  # Hover exit
             if not is_selected:
                 container.bgcolor = ft.Colors.TRANSPARENT
-                container.border = ft.border.only(
+                container.border = ft.Border.only(
                     bottom=ft.BorderSide(0, ft.Colors.TRANSPARENT)
                 )
         
@@ -2009,7 +2156,7 @@ class TorrentSearchApp:
                 btn.content.weight = ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_400
                 btn.content.color = ft.Colors.PRIMARY if is_selected else ft.Colors.GREY_400
                 btn.bgcolor = ft.Colors.TRANSPARENT
-                btn.border = ft.border.only(
+                btn.border = ft.Border.only(
                     bottom=ft.BorderSide(2, ft.Colors.PRIMARY) if is_selected else ft.BorderSide(0, ft.Colors.TRANSPARENT)
                 )
         else:
@@ -2025,10 +2172,10 @@ class TorrentSearchApp:
                         weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_400,
                         color=ft.Colors.PRIMARY if is_selected else ft.Colors.GREY_400,
                     ),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=6),
                     border_radius=0,
                     bgcolor=ft.Colors.TRANSPARENT,
-                    border=ft.border.only(
+                    border=ft.Border.only(
                         bottom=ft.BorderSide(2, ft.Colors.PRIMARY) if is_selected else ft.BorderSide(0, ft.Colors.TRANSPARENT)
                     ),
                     on_click=lambda e, idx=i: self._select_tab(idx),
@@ -2061,7 +2208,7 @@ class TorrentSearchApp:
                 weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.NORMAL,
             ),
             bgcolor=ft.Colors.PRIMARY if is_selected else ft.Colors.with_opacity(0.1, ft.Colors.GREY),
-            padding=ft.padding.symmetric(horizontal=12, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=6),
             border_radius=20,
             on_click=lambda e, sid=sort_id: self._apply_sort(sid),
             on_hover=self._on_sort_tag_hover,
@@ -2091,9 +2238,9 @@ class TorrentSearchApp:
                 weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.NORMAL,
             ),
             bgcolor=ft.Colors.DEEP_PURPLE if is_selected else ft.Colors.with_opacity(0.1, ft.Colors.GREY),
-            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             border_radius=20,
-            border=ft.border.all(1, ft.Colors.DEEP_PURPLE_300 if is_selected else ft.Colors.TRANSPARENT),
+            border=ft.Border.all(1, ft.Colors.DEEP_PURPLE_300 if is_selected else ft.Colors.TRANSPARENT),
             on_click=lambda e, cid=cat_id: self._toggle_category_filter(cid),
             on_hover=self._on_filter_chip_hover,
             data={"type": "category", "id": cat_id},
@@ -2112,9 +2259,9 @@ class TorrentSearchApp:
                 weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.NORMAL,
             ),
             bgcolor=ft.Colors.TEAL_700 if is_selected else ft.Colors.with_opacity(0.1, ft.Colors.GREY),
-            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             border_radius=20,
-            border=ft.border.all(1, ft.Colors.TEAL_300 if is_selected else ft.Colors.TRANSPARENT),
+            border=ft.Border.all(1, ft.Colors.TEAL_300 if is_selected else ft.Colors.TRANSPARENT),
             on_click=lambda e, pn=provider_name: self._toggle_provider_filter(pn),
             on_hover=self._on_filter_chip_hover,
             data={"type": "provider", "id": provider_name},
@@ -2155,10 +2302,10 @@ class TorrentSearchApp:
         # Update toggle button appearance
         if self.filters_visible:
             self.filter_toggle_btn.bgcolor = ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY)
-            self.filter_toggle_btn.border = ft.border.all(1, ft.Colors.with_opacity(0.4, ft.Colors.PRIMARY))
+            self.filter_toggle_btn.border = ft.Border.all(1, ft.Colors.with_opacity(0.4, ft.Colors.PRIMARY))
         else:
             self.filter_toggle_btn.bgcolor = ft.Colors.with_opacity(0.08, ft.Colors.WHITE)
-            self.filter_toggle_btn.border = ft.border.all(1, ft.Colors.with_opacity(0.15, ft.Colors.WHITE))
+            self.filter_toggle_btn.border = ft.Border.all(1, ft.Colors.with_opacity(0.15, ft.Colors.WHITE))
         
         try:
             self.filter_toggle_btn.update()
@@ -2711,13 +2858,13 @@ class TorrentSearchApp:
             def set_list_props(list_view):
                 if self.current_view_style == 'table':
                     list_view.spacing = 0
-                    list_view.padding = ft.padding.only(left=5, top=5, bottom=5, right=20)
+                    list_view.padding = ft.Padding.only(left=5, top=5, bottom=5, right=20)
                 elif self.current_view_style == 'compact':
                     list_view.spacing = 3
-                    list_view.padding = ft.padding.only(left=5, top=5, bottom=5, right=20)
+                    list_view.padding = ft.Padding.only(left=5, top=5, bottom=5, right=20)
                 else:
                     list_view.spacing = 10
-                    list_view.padding = ft.padding.only(left=10, top=10, bottom=10, right=15)
+                    list_view.padding = ft.Padding.only(left=10, top=10, bottom=10, right=15)
 
             set_list_props(self.all_results_list)
 
@@ -2924,7 +3071,7 @@ class TorrentSearchApp:
             ft.Container(
                 content=ft.Text(category_name, size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
                 bgcolor=category_color,
-                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                 border_radius=4
             )
         ]
@@ -2934,7 +3081,7 @@ class TorrentSearchApp:
                 ft.Container(
                     content=ft.Text(language, size=10, color=ft.Colors.WHITE),
                     bgcolor=ft.Colors.INDIGO,
-                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     border_radius=4
                 )
             )
@@ -2944,7 +3091,7 @@ class TorrentSearchApp:
                 ft.Container(
                     content=ft.Text("18+", size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
                     bgcolor=ft.Colors.RED,
-                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     border_radius=4
                 )
             )
@@ -2959,7 +3106,7 @@ class TorrentSearchApp:
             # Darker, solid background for contrast, no blur on card itself
             card_bgcolor = "#252525" if is_dark_glass else "#F0F0F0" 
             card_opacity = 1.0 # Solid card
-            border = ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.WHITE if is_dark_glass else ft.Colors.BLACK))
+            border = ft.Border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.WHITE if is_dark_glass else ft.Colors.BLACK))
             blur_effect = None # No blur on the card
             
             # Gradient Button Style (Purple -> Pink)
@@ -3076,7 +3223,7 @@ class TorrentSearchApp:
                     ft.Container(
                         content=ft.Text(provider_str, size=9, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
                         bgcolor=ft.Colors.BLUE_GREY_600,
-                        padding=ft.padding.symmetric(horizontal=4, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=4, vertical=2),
                         border_radius=3,
                         width=35,
                         alignment=ft.Alignment.CENTER,
@@ -3085,7 +3232,7 @@ class TorrentSearchApp:
                     ft.Container(
                         content=ft.Text(category_name[:4], size=9, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
                         bgcolor=ft.Colors.BLUE_600, # Use static color instead of primary for safety
-                        padding=ft.padding.symmetric(horizontal=4, vertical=2),
+                        padding=ft.Padding.symmetric(horizontal=4, vertical=2),
                         border_radius=3,
                         width=40,
                         alignment=ft.Alignment.CENTER,
@@ -3136,10 +3283,10 @@ class TorrentSearchApp:
                         ),
                     ], spacing=2, width=130, alignment=ft.MainAxisAlignment.END),
                 ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=ft.padding.only(left=8, top=5, bottom=5, right=35),  # Extra right padding for scrollbar
+                padding=ft.Padding.only(left=8, top=5, bottom=5, right=35),  # Extra right padding for scrollbar
                 bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY), # Safe subtle background
                 border_radius=5,
-                border=ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY)),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY)),
             )
             row.data = torrent
             return row
@@ -3189,9 +3336,9 @@ class TorrentSearchApp:
                         ft.Text("Source", weight=ft.FontWeight.BOLD, size=11, width=80, text_align=ft.TextAlign.CENTER),
                         ft.Container(width=130),  # Actions placeholder (matches row width)
                     ], spacing=5),
-                    padding=ft.padding.only(left=10, top=8, bottom=8, right=30),
+                    padding=ft.Padding.only(left=10, top=8, bottom=8, right=30),
                     bgcolor=ft.Colors.GREY_200 if self.page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_800,
-                    border_radius=ft.border_radius.only(top_left=5, top_right=5),
+                    border_radius=ft.BorderRadius.only(top_left=5, top_right=5),
                 )
                 items.append(header)
             
@@ -3255,9 +3402,9 @@ class TorrentSearchApp:
                             ),
                         ], spacing=2, width=130),
                     ], spacing=5, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=ft.padding.only(left=10, top=6, bottom=6, right=30),
+                    padding=ft.Padding.only(left=10, top=6, bottom=6, right=30),
                     bgcolor=row_bg,
-                    border=ft.border.only(bottom=ft.border.BorderSide(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY))),
+                    border=ft.Border.only(bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY))),
                 )
                 items.append(row)
             
@@ -3313,16 +3460,16 @@ class TorrentSearchApp:
         # Set list properties based on style
         if self.current_view_style == 'table':
             list_view.spacing = 0
-            list_view.padding = ft.padding.only(left=5, top=5, bottom=5, right=20)
+            list_view.padding = ft.Padding.only(left=5, top=5, bottom=5, right=20)
             list_view.controls.extend(self._create_table_view(limited_items, with_header=True))
         elif self.current_view_style == 'compact':
             list_view.spacing = 3
-            list_view.padding = ft.padding.only(left=5, top=5, bottom=5, right=20)
+            list_view.padding = ft.Padding.only(left=5, top=5, bottom=5, right=20)
             for torrent in limited_items:
                 list_view.controls.append(self._create_compact_row(torrent))
         else:
             list_view.spacing = 10
-            list_view.padding = ft.padding.only(left=10, top=10, bottom=10, right=15)
+            list_view.padding = ft.Padding.only(left=10, top=10, bottom=10, right=15)
             for torrent in limited_items:
                 list_view.controls.append(self._create_torrent_card(torrent))
         
@@ -4137,11 +4284,11 @@ class TorrentSearchApp:
                 self.download_manager.format_size(ti.total_size())
             )
             
-            def on_confirm(torrent, selected_files, download_path=None):
+            def on_confirm(selected_files, download_path=None):
                 # Extract indices
                 indices = [f['index'] for f in selected_files]
                 
-                if self.download_manager.add_download(torrent, indices, download_path=download_path):
+                if self.download_manager.add_download(torrent_obj, indices, download_path=download_path):
                     self._show_snack("Torrent added!")
                     # Switch to downloads tab
                     self.rail.selected_index = 3
@@ -4326,7 +4473,7 @@ class TorrentSearchApp:
                                     ft.ReorderableDragHandle(
                                         ft.Container(
                                             content=ft.Icon(ft.Icons.DRAG_HANDLE, color=ft.Colors.GREY_500, size=20),
-                                            padding=ft.padding.only(left=5, right=5)
+                                            padding=ft.Padding.only(left=5, right=5)
                                         )
                                     ),
                                     # Main content column
@@ -4339,7 +4486,7 @@ class TorrentSearchApp:
                                                 ft.Container(
                                                     content=ft.Text(cat_name, size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
                                                     bgcolor=cat_color,
-                                                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                                                     border_radius=4
                                                 )
                                             ], spacing=5),
@@ -4375,7 +4522,7 @@ class TorrentSearchApp:
                                                     style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
                                                 ),
                                             ], alignment=ft.MainAxisAlignment.END, spacing=10),
-                                            padding=ft.padding.only(right=10, bottom=10)
+                                            padding=ft.Padding.only(right=10, bottom=10)
                                         )
                                     ], spacing=0, expand=True)
                                 ], spacing=0),
@@ -4394,7 +4541,7 @@ class TorrentSearchApp:
                                 ft.ReorderableDragHandle(
                                     ft.Container(
                                         content=ft.Icon(ft.Icons.DRAG_HANDLE, color="#5f6368", size=18),
-                                        padding=ft.padding.only(left=5, right=5)
+                                        padding=ft.Padding.only(left=5, right=5)
                                     )
                                 ),
                                 # Health indicator (torrent strength)
@@ -4437,11 +4584,11 @@ class TorrentSearchApp:
                                     ),
                                 ], spacing=0),
                             ], spacing=10),
-                            padding=ft.padding.only(left=10, right=10, top=5, bottom=5),
+                            padding=ft.Padding.only(left=10, right=10, top=5, bottom=5),
                             bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY),
-                            border=ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY)),
+                            border=ft.Border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY)),
                             border_radius=5,
-                            margin=ft.margin.only(bottom=4),
+                            margin=ft.Margin.only(bottom=4),
                             key=f"compact_{b.get('id', name)}"
                         )
                         new_controls.append(compact_row)
@@ -4759,7 +4906,7 @@ class TorrentSearchApp:
                     ft.Container(
                         content=ft.Text(category_text, size=10, weight=ft.FontWeight.BOLD),
                         bgcolor=category_color,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        padding=ft.Padding.symmetric(horizontal=8, vertical=4),
                         border_radius=5,
                     ),
                     ft.Icon(safety_icon, color=safety_color, size=18, tooltip=safety_tooltip),
@@ -4768,7 +4915,7 @@ class TorrentSearchApp:
                            size=10, expand=True),
                 ], alignment=ft.MainAxisAlignment.START, spacing=10),
                 padding=5,
-                border=ft.border.all(1, ft.Colors.GREY_800),
+                border=ft.Border.all(1, ft.Colors.GREY_800),
                 border_radius=8,
             )
             provider_toggles.controls.append(provider_card)
@@ -5043,15 +5190,39 @@ def instance_message_handler(message):
 
 
 if __name__ == "__main__":
-    # Set Windows App User Model ID BEFORE starting Flet
+    # When running as a windowed PyInstaller app (--noconsole), sys.stdout and
+    # sys.stderr are None.  Redirect them to devnull so that print() and
+    # .flush() calls don't crash with "AttributeError: 'NoneType' ...".
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
+
+    # Set Windows App User Model ID BEFORE starting Flet (ONLY IF NOT MSIX)
     if sys.platform == 'win32':
+        # Check if running from MSIX (WindowsApps folder)
+        is_msix = False
         try:
-            import ctypes
-            app_id = 'SayanDey.SwiftSeed.TorrentClient.v5'
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-            print(f"[Pre-Init] Windows App User Model ID set to: {app_id}")
-        except Exception as e:
-            print(f"[Pre-Init] Failed to set App User Model ID: {e}")
+            if 'WindowsApps' in os.path.abspath(sys.executable):
+                is_msix = True
+            else:
+                import ctypes
+                length = ctypes.c_uint32(0)
+                if ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None) == 122: # ERROR_INSUFFICIENT_BUFFER
+                    is_msix = True
+        except:
+            pass
+            
+        if not is_msix:
+            try:
+                import ctypes
+                app_id = 'SayanDey.SwiftSeed.TorrentClient.v5'
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                print(f"[Pre-Init] Windows App User Model ID set to: {app_id}")
+            except Exception as e:
+                print(f"[Pre-Init] Failed to set App User Model ID: {e}")
+        else:
+            print("[Pre-Init] Running as MSIX package, skipping explicit AppUserModelID override.")
             
     # --- SINGLE INSTANCE CHECK ---
     try:
@@ -5107,7 +5278,15 @@ if __name__ == "__main__":
         # Continue anyway if check fails
     # -----------------------------
     
+    # When frozen with PyInstaller, Flet might fail to locate its bundled executable
+    # and fallback to downloading an unpatched fresh one from the internet.
+    # To prevent this, we explicitly tell Flet where the patched executable directory is.
+    # [Removed] In Flet 0.80+, os.walk finds the wrong flet.exe causing silent crashes.
+    # Flet handles its own executable resolution correctly now.
+
     # Start the app with explicit name configuration
+    print("Calling ft.run()...")
+    sys.stdout.flush()
     try:
         ft.app(
             target=main, 

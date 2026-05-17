@@ -1072,13 +1072,13 @@ class SettingsView(ft.Container):
                     ft.Container(
                         content=ft.Text(category_text, size=10, weight=ft.FontWeight.BOLD),
                         bgcolor=category_color,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        padding=ft.Padding.symmetric(horizontal=8, vertical=4),
                         border_radius=5,
                     ),
                     ft.Container(
                         content=ft.Text(language_text, size=10, weight=ft.FontWeight.BOLD),
                         bgcolor=language_color,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        padding=ft.Padding.symmetric(horizontal=8, vertical=4),
                         border_radius=5,
                     ),
                     ft.Icon(safety_icon, color=safety_color, size=18, tooltip=safety_tooltip),
@@ -1087,7 +1087,7 @@ class SettingsView(ft.Container):
                     ft.Text(provider.info.url, size=10, color=ft.Colors.GREY_500, expand=True, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS),
                 ], alignment=ft.MainAxisAlignment.START, spacing=8),
                 padding=10,
-                border=ft.border.all(1, ft.Colors.GREY_800),
+                border=ft.Border.all(1, ft.Colors.GREY_800),
                 border_radius=8,
             )
         
@@ -1145,7 +1145,7 @@ class SettingsView(ft.Container):
                     provider_container.controls.append(
                         ft.Container(
                             content=ft.Text(f"━━━ {display_category.upper()} ━━━", size=14, weight=ft.FontWeight.BOLD, color=header_color),
-                            margin=ft.margin.only(top=15, bottom=5),
+                            margin=ft.Margin.only(top=15, bottom=5),
                         )
                     )
                 
@@ -1662,7 +1662,7 @@ class SettingsView(ft.Container):
                                color=ft.Colors.ORANGE_300, italic=True),
                     ]),
                     padding=15,
-                    border=ft.border.all(1, ft.Colors.GREY_700),
+                    border=ft.Border.all(1, ft.Colors.GREY_700),
                     border_radius=8,
                 ),
                 
@@ -1808,7 +1808,7 @@ class SettingsView(ft.Container):
                         magnet_status,
                     ]),
                     padding=15,
-                    border=ft.border.all(1, ft.Colors.GREY_700),
+                    border=ft.Border.all(1, ft.Colors.GREY_700),
                     border_radius=8,
                 ),
                 

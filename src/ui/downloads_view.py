@@ -43,6 +43,21 @@ class DownloadsView(ft.Container):
         self._refresh_list(update_ui=False)
         debug_log("_refresh_list returned")
         
+        # Add a visual button to add torrents
+        self.add_torrent_button_container = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE, size=20, color=ft.Colors.BLUE_400),
+                ft.Text("Click to add a torrent file", size=13, italic=True, color=ft.Colors.GREY_500),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            padding=10,
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY_500)),
+            border_radius=10,
+            bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY_500),
+            margin=ft.Margin.only(bottom=10),
+            on_click=self._pick_torrent_file,
+            ink=True
+        )
+        
         return ft.Column([
             ft.Row([
                 ft.Text("Downloads", size=28, weight=ft.FontWeight.BOLD),
@@ -74,6 +89,7 @@ class DownloadsView(ft.Container):
                    size=12, 
                    color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
             ft.Divider(),
+            self.add_torrent_button_container,
             self.downloads_list
         ], expand=True)
 
@@ -407,11 +423,11 @@ class DownloadsView(ft.Container):
                     self.torrent_manager.format_size(ti.total_size())
                 )
                 
-                def on_confirm(torrent, selected_files, download_path=None):
+                def on_confirm(selected_files, download_path=None):
                     # Extract indices
                     indices = [f['index'] for f in selected_files]
                     
-                    if self.torrent_manager.add_download(torrent, indices, download_path=download_path):
+                    if self.torrent_manager.add_download(torrent_obj, indices, download_path=download_path):
                          self._show_snack("Torrent added!")
                     else:
                          self._show_snack("Failed to add torrent")
@@ -474,7 +490,11 @@ class DownloadsView(ft.Container):
                 # Show empty state
                 self.downloads_list.controls = [self._create_empty_state()]
                 self.download_controls = {}
+                if hasattr(self, 'add_torrent_button_container'):
+                    self.add_torrent_button_container.visible = True
             else:
+                if hasattr(self, 'add_torrent_button_container'):
+                    self.add_torrent_button_container.visible = False
                 # Sync download cards
                 # We rebuild the controls list to ensure order and remove any placeholders/deleted items
                 new_controls_list = []
@@ -539,7 +559,7 @@ class DownloadsView(ft.Container):
         
         progress_bar = ft.ProgressBar(value=item.progress, height=8)
         status_text = ft.Text(f"{item.status.value}", size=12, weight=ft.FontWeight.BOLD)
-        status_container = ft.Container(content=status_text, padding=ft.padding.only(right=10))
+        status_container = ft.Container(content=status_text, padding=ft.Padding.only(right=10))
         progress_text = ft.Text(f"Progress: {item.progress*100:.1f}%", size=11)
         size_text = ft.Text(f"Size: {TorrentManager.format_size(item.total_size)}", size=11)
         
@@ -563,7 +583,7 @@ class DownloadsView(ft.Container):
         if is_glass:
             card_bgcolor = "#1AFFFFFF" # Semi-transparent white
             card_elevation = 0
-            border = ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE))
+            border = ft.Border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE))
             blur_effect = ft.Blur(10, 0, ft.BlurTileMode.MIRROR)
         else:
             card_bgcolor = None
@@ -918,7 +938,7 @@ class DownloadsView(ft.Container):
                                 title=ft.Text(file_name, size=12, color=text_color),
                                 subtitle=ft.Text(f"Size: {size_str} | Progress: {progress*100:.1f}%", size=10, color=text_color),
                                 dense=True,
-                                content_padding=ft.padding.only(left=10 + (depth * 10)) if depth > 0 else None
+                                content_padding=ft.Padding.only(left=10 + (depth * 10)) if depth > 0 else None
                             )
                         )
                     return controls
@@ -1183,10 +1203,10 @@ class DownloadsView(ft.Container):
                 self.torrent_manager.format_size(ti.total_size())
             )
             
-            def on_confirm(torrent, selected_files, download_path=None):
+            def on_confirm(selected_files, download_path=None):
                 indices = [f['index'] for f in selected_files]
                 
-                if self.torrent_manager.add_download(torrent, indices, download_path=download_path):
+                if self.torrent_manager.add_download(torrent_obj, indices, download_path=download_path):
                      self._show_snack("✅ Download started!")
                 else:
                      self._show_snack("❌ Failed to add torrent")

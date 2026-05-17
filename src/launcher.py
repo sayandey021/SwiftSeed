@@ -9,14 +9,31 @@ import os
 import subprocess
 
 def main():
-    # Set Windows App User Model ID FIRST
+    # Set Windows App User Model ID FIRST (ONLY IF NOT MSIX)
     if sys.platform == 'win32':
+        # Check if running from MSIX (WindowsApps folder)
+        is_msix = False
         try:
-            app_id = 'SayanDey.SwiftSeed.TorrentClient.v5'
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
-            print(f"[Pre-Init] Windows App User Model ID set to: {app_id}")
-        except Exception as e:
-            print(f"Failed to set App User Model ID: {e}")
+            if 'WindowsApps' in os.path.abspath(sys.executable):
+                is_msix = True
+            else:
+                import ctypes
+                length = ctypes.c_uint32(0)
+                if ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None) == 122: # ERROR_INSUFFICIENT_BUFFER
+                    is_msix = True
+        except:
+            pass
+            
+        if not is_msix:
+            try:
+                import ctypes
+                app_id = 'SayanDey.SwiftSeed.TorrentClient.v5'
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+                print(f"[Pre-Init] Windows App User Model ID set to: {app_id}")
+            except Exception as e:
+                print(f"Failed to set App User Model ID: {e}")
+        else:
+            print("[Pre-Init] Running as MSIX package, skipping explicit AppUserModelID override.")
     
     # Get the directory where this script is located
     if getattr(sys, 'frozen', False):
@@ -81,7 +98,7 @@ def main():
     
     # Run the app
     try:
-        ft.app(
+        ft.run(
             target=app_main.main, 
             assets_dir="assets",
             name="SwiftSeed",

@@ -97,9 +97,11 @@ class FileAssociationManager:
             icon_path = f'"{self.exe_path}",0'
             try:
                 app_dir = os.path.dirname(self.exe_path)
-                file_icon = os.path.join(app_dir, "assets", "file.ico")
+                file_icon = os.path.join(app_dir, "_internal", "assets", "file.ico")
+                if not os.path.exists(file_icon):
+                    file_icon = os.path.join(app_dir, "assets", "file.ico")
                 if os.path.exists(file_icon):
-                    icon_path = f'"{file_icon}"'
+                    icon_path = f'"{file_icon}",0'
             except:
                 pass
                 
@@ -170,7 +172,7 @@ class FileAssociationManager:
         try:
             # Remove .torrent association
             try:
-                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.torrent")
+                self._delete_key_recursive(winreg.HKEY_CURRENT_USER, r"Software\Classes\.torrent")
             except FileNotFoundError:
                 pass
             

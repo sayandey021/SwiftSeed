@@ -10,66 +10,98 @@ def debug_log(msg):
     pass
 
 # CRITICAL: Fix DLL load errors for frozen apps on Windows
+_dll_log_lines = []  # Collect diagnostic info for troubleshooting
+
 if os.name == 'nt' and getattr(sys, 'frozen', False):
     import ctypes
     import ctypes.wintypes
     
+    _kernel32 = ctypes.windll.kernel32
+    _LoadLibraryW = _kernel32.LoadLibraryW
+    _LoadLibraryW.argtypes = [ctypes.wintypes.LPCWSTR]
+    _LoadLibraryW.restype = ctypes.wintypes.HMODULE
+    _GetLastError = _kernel32.GetLastError
+    
     # Determine base directory
     base_dir = os.path.dirname(sys.executable)
     internal_dir = os.path.join(base_dir, '_internal')
+    lt_dll_dir = os.path.join(internal_dir, 'libtorrent')
+    
+    _dll_log_lines.append(f"exe: {sys.executable}")
+    _dll_log_lines.append(f"base_dir: {base_dir}")
+    _dll_log_lines.append(f"internal_dir exists: {os.path.exists(internal_dir)}")
+    _dll_log_lines.append(f"lt_dll_dir exists: {os.path.exists(lt_dll_dir)}")
     
     # All directories where DLLs may reside (order matters - more specific first)
-    dll_search_dirs = [
-        os.path.join(internal_dir, 'libtorrent'),
-        internal_dir,
-        base_dir,
-    ]
+    dll_search_dirs = [lt_dll_dir, internal_dir, base_dir]
     
-    # METHOD 1: Prepend to PATH (most compatible, works on all Windows)
+    # METHOD 1: Prepend to PATH (legacy fallback, most compatible)
     existing_path = os.environ.get('PATH', '')
     new_paths = [p for p in dll_search_dirs if os.path.exists(p) and p not in existing_path]
     if new_paths:
         os.environ['PATH'] = os.pathsep.join(new_paths) + os.pathsep + existing_path
     
     # METHOD 2: Use os.add_dll_directory (Python 3.8+, Windows 10+)
-    # This is the PREFERRED method for Python 3.8+ as Python no longer uses PATH for DLL search
     for path in dll_search_dirs:
         if os.path.exists(path):
             try:
                 os.add_dll_directory(path)
-            except (AttributeError, OSError):
-                pass
+                _dll_log_lines.append(f"add_dll_directory OK: {path}")
+            except (AttributeError, OSError) as e:
+                _dll_log_lines.append(f"add_dll_directory FAIL: {path} -> {e}")
     
-    # METHOD 3: Preload critical DLLs explicitly
-    # The libtorrent .pyd links against OpenSSL and MSVC runtime DLLs.
-    # Different builds may use different OpenSSL naming conventions, so we
-    # try ALL known variants to ensure compatibility.
-    critical_dll_patterns = [
-        # MSVC runtime (required by all C++ extensions)
-        'vcruntime140.dll',
-        'vcruntime140_1.dll',
-        'msvcp140.dll',
-        'concrt140.dll',
-        # OpenSSL 3.x variants (Python 3.13 typically uses OpenSSL 3.x)
-        'libcrypto-3.dll',
-        'libssl-3.dll',
-        'libcrypto-3-x64.dll',
-        'libssl-3-x64.dll',
-        # OpenSSL 1.1 variants (older libtorrent builds)
-        'libcrypto-1_1.dll',
-        'libssl-1_1.dll',
-        'libcrypto-1_1-x64.dll',
-        'libssl-1_1-x64.dll',
-        # zlib
-        'zlib.dll',
-        'zlib1.dll',
-        # Boost DLLs (if dynamically linked)
-        'boost_python313-vc143-mt-x64-*.dll',
-        'boost_system-vc143-mt-x64-*.dll',
+    # METHOD 3: SetDefaultDllDirectories — tell Windows to include user-added dirs
+    # LOAD_LIBRARY_SEARCH_DEFAULT_DIRS = 0x1000 (includes application dir + system32)
+    # LOAD_LIBRARY_SEARCH_USER_DIRS   = 0x0400 (includes dirs added via AddDllDirectory)
+    # Together they make os.add_dll_directory paths actually work for transitive deps
+    try:
+        _kernel32.SetDefaultDllDirectories(0x1000 | 0x0400)
+        _dll_log_lines.append("SetDefaultDllDirectories(DEFAULT|USER) OK")
+    except Exception as e:
+        _dll_log_lines.append(f"SetDefaultDllDirectories FAIL: {e}")
+    
+    # METHOD 4: Use SetDllDirectoryW to set legacy search directory
+    # IMPORTANT: Do NOT reset this before import — it must remain active
+    try:
+        _kernel32.SetDllDirectoryW(lt_dll_dir)
+        _dll_log_lines.append(f"SetDllDirectoryW OK: {lt_dll_dir}")
+    except Exception as e:
+        _dll_log_lines.append(f"SetDllDirectoryW FAIL: {e}")
+    
+    # Also register _internal via kernel32.AddDllDirectory for transitive deps
+    try:
+        _AddDllDir = _kernel32.AddDllDirectory
+        _AddDllDir.argtypes = [ctypes.wintypes.LPCWSTR]
+        _AddDllDir.restype = ctypes.c_void_p
+        for _d in dll_search_dirs:
+            if os.path.exists(_d):
+                _AddDllDir(_d)
+                _dll_log_lines.append(f"AddDllDirectory OK: {_d}")
+    except Exception as e:
+        _dll_log_lines.append(f"AddDllDirectory FAIL: {e}")
+    
+    # List all DLLs in the libtorrent directory
+    if os.path.exists(lt_dll_dir):
+        lt_files = os.listdir(lt_dll_dir)
+        _dll_log_lines.append(f"libtorrent dir contents: {lt_files}")
+    else:
+        lt_files = []
+        _dll_log_lines.append("libtorrent dir MISSING!")
+    
+    # Critical DLLs to load in dependency order
+    critical_dlls = [
+        'vcruntime140.dll', 'vcruntime140_1.dll', 'vcruntime140_threads.dll',
+        'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll',
+        'msvcp140_atomic_wait.dll', 'msvcp140_codecvt_ids.dll',
+        'concrt140.dll', 'vcomp140.dll', 'vcamp140.dll', 'vccorlib140.dll',
+        'ucrtbase.dll',
+        'python313.dll', 'python3.dll',
+        'libcrypto-3.dll', 'libssl-3.dll',
+        'libcrypto-3-x64.dll', 'libssl-3-x64.dll',
+        'zlib1.dll', 'zlib.dll', 'libffi-8.dll',
     ]
     
-    # Also dynamically discover ALL .dll files in the _internal directory
-    # This catches any DLLs we didn't think to list explicitly
+    # Discover all DLLs in search directories
     all_dll_names = set()
     for search_dir in dll_search_dirs:
         if os.path.exists(search_dir):
@@ -80,68 +112,191 @@ if os.name == 'nt' and getattr(sys, 'frozen', False):
             except OSError:
                 pass
     
-    # Merge: start with critical DLLs (in priority order), then add any others
-    dlls_to_load = []
-    loaded_names = set()
+    loaded_lower = set(d.lower() for d in critical_dlls)
+    system_prefixes = ('api-ms-', 'ext-ms-', 'kernel32', 'user32', 'advapi32', 'ntdll')
+    remaining = [d for d in sorted(all_dll_names) 
+                 if d.lower() not in loaded_lower and not d.lower().startswith(system_prefixes)]
+    all_dlls_ordered = critical_dlls + remaining
     
-    # Add critical DLLs first (in specific order to handle dependencies)
-    for pattern in critical_dll_patterns:
-        if '*' in pattern:
-            # Glob pattern - match against discovered DLLs
-            import fnmatch
-            for dll_name in sorted(all_dll_names):
-                if fnmatch.fnmatch(dll_name.lower(), pattern.lower()) and dll_name.lower() not in loaded_names:
-                    dlls_to_load.append(dll_name)
-                    loaded_names.add(dll_name.lower())
-        else:
-            if pattern.lower() not in loaded_names:
-                dlls_to_load.append(pattern)
-                loaded_names.add(pattern.lower())
-    
-    # Add remaining discovered DLLs (non-system ones that aren't already listed)
-    system_dll_prefixes = ('api-ms-', 'ext-ms-', 'kernel32', 'user32', 'advapi32', 'ntdll')
-    for dll_name in sorted(all_dll_names):
-        if dll_name.lower() not in loaded_names and not dll_name.lower().startswith(system_dll_prefixes):
-            dlls_to_load.append(dll_name)
-            loaded_names.add(dll_name.lower())
-    
-    # Preload all DLLs
-    for dll_name in dlls_to_load:
+    # Load each DLL using kernel32.LoadLibraryW (uses standard search order)
+    for dll_name in all_dlls_ordered:
         for search_dir in dll_search_dirs:
             dll_full_path = os.path.join(search_dir, dll_name)
             if os.path.exists(dll_full_path):
-                try:
-                    ctypes.WinDLL(dll_full_path)
-                except Exception:
-                    pass
+                handle = _LoadLibraryW(dll_full_path)
+                if handle:
+                    _dll_log_lines.append(f"LoadLibraryW OK: {dll_name} from {os.path.basename(search_dir)}")
+                else:
+                    err = _GetLastError()
+                    _dll_log_lines.append(f"LoadLibraryW FAIL: {dll_name} from {os.path.basename(search_dir)} (error {err})")
                 break
+    
+    # Try to preload the .pyd itself
+    pyd_name = '__init__.cp313-win_amd64.pyd'
+    pyd_path = os.path.join(lt_dll_dir, pyd_name)
+    if os.path.exists(pyd_path):
+        handle = _LoadLibraryW(pyd_path)
+        if handle:
+            _dll_log_lines.append(f"Pre-load .pyd OK: {pyd_name}")
+        else:
+            err = _GetLastError()
+            _dll_log_lines.append(f"Pre-load .pyd FAIL: {pyd_name} (error {err})")
+            # Try with LoadLibraryExW using LOAD_WITH_ALTERED_SEARCH_PATH
+            # This makes Windows search for deps in the .pyd's own directory
+            try:
+                _LoadLibraryExW = _kernel32.LoadLibraryExW
+                _LoadLibraryExW.argtypes = [ctypes.wintypes.LPCWSTR, ctypes.wintypes.HANDLE, ctypes.wintypes.DWORD]
+                _LoadLibraryExW.restype = ctypes.wintypes.HMODULE
+                LOAD_WITH_ALTERED_SEARCH_PATH = 0x00000008
+                handle2 = _LoadLibraryExW(pyd_path, None, LOAD_WITH_ALTERED_SEARCH_PATH)
+                if handle2:
+                    _dll_log_lines.append(f"LoadLibraryExW(ALTERED_SEARCH_PATH) OK: {pyd_name}")
+                else:
+                    err2 = _GetLastError()
+                    _dll_log_lines.append(f"LoadLibraryExW(ALTERED_SEARCH_PATH) FAIL: {pyd_name} (error {err2})")
+            except Exception as ex:
+                _dll_log_lines.append(f"LoadLibraryExW exception: {ex}")
+    else:
+        _dll_log_lines.append(f"WARNING: .pyd not found at {pyd_path}")
+    
+    # NOTE: Do NOT reset SetDllDirectoryW here!
+    # It must remain active so that `import libtorrent` can find transitive deps.
+    # We reset it AFTER the import succeeds.
 
+# ---- Import libtorrent ----
+# SetDllDirectoryW is still pointing to the libtorrent dir (if frozen),
+# so Windows will search there for transitive dependencies during import.
+_lt_import_ok = False
 try:
     import libtorrent as lt
+    _lt_import_ok = True
 except ImportError as e:
-    if getattr(sys, 'frozen', False):
-        # Detailed diagnostics for frozen apps
-        _diag_lines = [f"CRITICAL: Failed to import libtorrent: {e}"]
-        _base = os.path.dirname(sys.executable)
-        _int = os.path.join(_base, '_internal')
-        _lt_dir = os.path.join(_int, 'libtorrent')
-        
-        # Show libtorrent directory contents
-        if os.path.exists(_lt_dir):
-            _diag_lines.append(f"libtorrent dir contents: {os.listdir(_lt_dir)}")
-        else:
-            _diag_lines.append(f"libtorrent dir NOT FOUND at {_lt_dir}")
-        
-        # Show all DLLs in _internal that could be relevant
-        if os.path.exists(_int):
-            _dlls = [f for f in os.listdir(_int) if f.lower().endswith('.dll')]
-            _diag_lines.append(f"DLLs in _internal ({len(_dlls)}): {_dlls}")
-        
-        # Show PATH
-        _diag_lines.append(f"PATH: {os.environ.get('PATH', 'NOT SET')[:500]}")
-        
-        print('\n'.join(_diag_lines))
-    raise
+    # Attempt 2: Try loading via ctypes with winmode=0 (legacy search)
+    if os.name == 'nt' and getattr(sys, 'frozen', False):
+        _dll_log_lines.append(f"Standard import failed: {e}")
+        _dll_log_lines.append("Trying ctypes.WinDLL(winmode=0) fallback...")
+        pyd_path = os.path.join(
+            os.path.dirname(sys.executable), '_internal', 'libtorrent',
+            '__init__.cp313-win_amd64.pyd'
+        )
+        try:
+            ctypes.WinDLL(pyd_path, winmode=0)
+            _dll_log_lines.append("WinDLL(winmode=0) OK, retrying import...")
+            import libtorrent as lt
+            _lt_import_ok = True
+            _dll_log_lines.append("Retry import OK!")
+        except Exception as e2:
+            _dll_log_lines.append(f"WinDLL(winmode=0) fallback FAIL: {e2}")
+    
+    if not _lt_import_ok:
+        if getattr(sys, 'frozen', False):
+            # Embed PE import scanner for diagnostics
+            _diag_lines = [f"CRITICAL: Failed to import libtorrent: {e}", ""]
+            _diag_lines.append("=== DLL Loading Log ===")
+            _diag_lines.extend(_dll_log_lines)
+            _diag_lines.append("")
+            
+            _base = os.path.dirname(sys.executable)
+            _int = os.path.join(_base, '_internal')
+            _lt_dir = os.path.join(_int, 'libtorrent')
+            
+            # PE import scanning — find exactly what DLLs the .pyd requires
+            _pyd_path = os.path.join(_lt_dir, '__init__.cp313-win_amd64.pyd')
+            if os.path.exists(_pyd_path):
+                try:
+                    import struct as _st
+                    with open(_pyd_path, 'rb') as _pf:
+                        _pd = _pf.read()
+                    _pe_off = _st.unpack_from('<I', _pd, 0x3C)[0]
+                    _nsec = _st.unpack_from('<H', _pd, _pe_off + 6)[0]
+                    _ohsz = _st.unpack_from('<H', _pd, _pe_off + 20)[0]
+                    _sec_start = _pe_off + 24 + _ohsz
+                    # Get import directory RVA from optional header
+                    _imp_rva = _st.unpack_from('<I', _pd, _pe_off + 24 + 104)[0]  # 64-bit PE
+                    if _imp_rva == 0:
+                        _imp_rva = _st.unpack_from('<I', _pd, _pe_off + 24 + 96)[0]  # 32-bit PE
+                    # Build section table for RVA-to-offset
+                    _secs = []
+                    for _si in range(_nsec):
+                        _so = _sec_start + _si * 40
+                        _sv = _st.unpack_from('<I', _pd, _so + 12)[0]
+                        _ss = _st.unpack_from('<I', _pd, _so + 8)[0]
+                        _sr = _st.unpack_from('<I', _pd, _so + 20)[0]
+                        _secs.append((_sv, _ss, _sr))
+                    def _rva2off(rva):
+                        for sv, ss, sr in _secs:
+                            if sv <= rva < sv + ss:
+                                return rva - sv + sr
+                        return rva
+                    # Walk import descriptors
+                    _imp_off = _rva2off(_imp_rva)
+                    _imports = []
+                    for _ii in range(200):
+                        _ido = _imp_off + _ii * 20
+                        if _ido + 20 > len(_pd):
+                            break
+                        _name_rva = _st.unpack_from('<I', _pd, _ido + 12)[0]
+                        if _name_rva == 0:
+                            break
+                        _name_off = _rva2off(_name_rva)
+                        _end = _pd.index(b'\x00', _name_off)
+                        _dname = _pd[_name_off:_end].decode('ascii', errors='replace')
+                        # Check if this DLL exists in our dirs
+                        _found = False
+                        for _sd in [_lt_dir, _int, _base]:
+                            if os.path.exists(os.path.join(_sd, _dname)):
+                                _found = True
+                                break
+                        # Also check System32
+                        _sys32 = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32')
+                        if not _found and os.path.exists(os.path.join(_sys32, _dname)):
+                            _found = True
+                        _status = "FOUND" if _found else "**MISSING**"
+                        _imports.append(f"  {_status}: {_dname}")
+                    _diag_lines.append("=== PE IMPORTS (actual DLL dependencies) ===")
+                    _diag_lines.extend(_imports)
+                except Exception as _pe_err:
+                    _diag_lines.append(f"PE scan error: {_pe_err}")
+            
+            # Show libtorrent directory contents
+            if os.path.exists(_lt_dir):
+                _diag_lines.append(f"\nlibtorrent dir contents: {os.listdir(_lt_dir)}")
+            else:
+                _diag_lines.append(f"\nlibtorrent dir NOT FOUND at {_lt_dir}")
+            
+            # Show all DLLs in _internal
+            if os.path.exists(_int):
+                _dlls = [f for f in os.listdir(_int) if f.lower().endswith('.dll')]
+                _diag_lines.append(f"DLLs in _internal ({len(_dlls)}): {_dlls}")
+            
+            _diag_lines.append(f"PATH: {os.environ.get('PATH', 'NOT SET')[:500]}")
+            
+            # Write to log file
+            _log_path = os.path.join(_base, 'dll_error_log.txt')
+            try:
+                with open(_log_path, 'w') as _lf:
+                    _lf.write('\n'.join(_diag_lines))
+                print(f"Diagnostic log written to: {_log_path}")
+            except Exception:
+                try:
+                    _app_data = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'SwiftSeed')
+                    os.makedirs(_app_data, exist_ok=True)
+                    _log_path = os.path.join(_app_data, 'dll_error_log.txt')
+                    with open(_log_path, 'w') as _lf:
+                        _lf.write('\n'.join(_diag_lines))
+                    print(f"Diagnostic log written to: {_log_path}")
+                except Exception:
+                    pass
+            
+            print('\n'.join(_diag_lines))
+        raise
+
+# Reset SetDllDirectoryW now that import succeeded (or we already raised)
+if os.name == 'nt' and getattr(sys, 'frozen', False):
+    try:
+        _kernel32.SetDllDirectoryW(None)
+    except Exception:
+        pass
 
 class DownloadStatus(Enum):
     DOWNLOADING = "Downloading"

@@ -185,7 +185,7 @@ def main():
         # Generate Assets
         print("Generating MSIX assets...")
         run_command(["powershell", "-ExecutionPolicy", "Bypass", "-File", "create_msix_assets.ps1", 
-                    "-IconPath", "src/assets/icon.ico", "-OutputDir", "msix_package/Assets"], cwd=base_dir)
+                    "-IconPath", "src/assets/icon.ico", "-FileIconPath", "src/assets/file_256_preview.png", "-OutputDir", "msix_package/Assets"], cwd=base_dir)
 
         # Pack MSIX
         print("Packing MSIX...")
