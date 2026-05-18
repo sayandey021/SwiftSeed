@@ -537,6 +537,7 @@ class TorrentSearchApp:
                 # Sync Flet taskbar state
                 def _sync_restore():
                     try:
+                        self.page.window.visible = True
                         self.page.window.skip_task_bar = False
                         self.page.window.minimized = False
                         self.page.update()
@@ -561,6 +562,7 @@ class TorrentSearchApp:
                 # Sync Flet taskbar state
                 def _sync_hide():
                     try:
+                        self.page.window.visible = False
                         self.page.window.skip_task_bar = True
                         self.page.update()
                     except:
@@ -697,6 +699,7 @@ class TorrentSearchApp:
         # 1. Flet standard (Non-blocking update)
         def flet_focus():
             try:
+                self.page.window.visible = True
                 self.page.window.minimized = False
                 self.page.window.focused = True
                 self.page.update()
