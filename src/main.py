@@ -406,6 +406,8 @@ class TorrentSearchApp:
             if not self.page.theme.color_scheme_seed:
                 self.page.theme.color_scheme_seed = ft.Colors.BLUE
         
+        # Apply Background Image if configured (Now handled in root_container)
+        
         # State
         debug_log("Calling get_all_providers()")
         self.providers = get_all_providers()
@@ -1064,6 +1066,14 @@ class TorrentSearchApp:
         if hasattr(self, 'exit_checkbox') and self.exit_checkbox and self.exit_checkbox.value:
             self.settings_manager.set('show_close_confirmation', False)
             self.settings_manager.set('default_close_action', 'minimize')
+            
+            # Sync with settings UI
+            if hasattr(self, 'settings_view') and hasattr(self.settings_view, 'close_confirmation_switch'):
+                self.settings_view.close_confirmation_switch.value = False
+                try:
+                    self.settings_view.close_confirmation_switch.update()
+                except Exception as e:
+                    print(f"Failed to update settings switch: {e}")
 
         if self.exit_dialog:
             if hasattr(self.page, 'close'):
@@ -1113,6 +1123,14 @@ class TorrentSearchApp:
         if hasattr(self, 'exit_checkbox') and self.exit_checkbox and self.exit_checkbox.value:
             self.settings_manager.set('show_close_confirmation', False)
             self.settings_manager.set('default_close_action', 'exit')
+            
+            # Sync with settings UI
+            if hasattr(self, 'settings_view') and hasattr(self.settings_view, 'close_confirmation_switch'):
+                self.settings_view.close_confirmation_switch.value = False
+                try:
+                    self.settings_view.close_confirmation_switch.update()
+                except Exception as e:
+                    print(f"Failed to update settings switch: {e}")
 
         if hasattr(self, '_is_exiting') and self._is_exiting:
             return
@@ -1189,6 +1207,25 @@ class TorrentSearchApp:
             traceback.print_exc()
         # Persistent SnackBar for notifications
         self.page.snack_bar = ft.SnackBar(content=ft.Text(""), duration=4000)
+
+    def _apply_bg_image(self):
+        """Applies the background image to the root container."""
+        if not hasattr(self, 'root_container'):
+            return
+            
+        bg_image_path = self.settings_manager.get('bg_image_path', '')
+        bg_image_opacity = self.settings_manager.get('bg_image_opacity', 0.15)
+        
+        if bg_image_path and (os.path.exists(bg_image_path) or bg_image_path.startswith('backgrounds/')):
+            self.root_container.image = ft.DecorationImage(
+                src=bg_image_path,
+                fit=ft.BoxFit.COVER,
+                opacity=float(bg_image_opacity)
+            )
+        else:
+            self.root_container.image = None
+            
+        self.page.update()
 
     def _setup_ui(self):
         # Navigation Rail (Sidebar)
@@ -1281,7 +1318,8 @@ class TorrentSearchApp:
             self.settings_manager, 
             self.download_manager,
             self.providers,
-            self.provider_manager
+            self.provider_manager,
+            update_bg_callback=self._apply_bg_image
         )
         self.about_view = self._build_about_view()
         
@@ -1313,9 +1351,12 @@ class TorrentSearchApp:
         is_mobile = self.page.width < 800
         
         # Only update if mode changed or controls are empty
-        if is_mobile != self.is_mobile or not self.page.controls:
+        if is_mobile != self.is_mobile or not hasattr(self, 'root_container'):
             self.is_mobile = is_mobile
             self.page.controls.clear()
+            
+            self.root_container = ft.Container(expand=True)
+            self.page.add(self.root_container)
             
             # Check for glass theme
             base_mode = self.settings_manager.get('base_mode')
@@ -1355,15 +1396,13 @@ class TorrentSearchApp:
                     end=ft.Alignment.BOTTOM_RIGHT,
                     colors=["#0F0F13", "#1A1320", "#251838", "#2D1B3D"] if True else ["#E0E0E0", "#F5F5F7", "#FFFFFF"],
                 )
-                self.page.add(
-                    ft.Container(
-                        content=content,
-                        expand=True,
-                        gradient=bg_gradient,
-                    )
-                )
+                self.root_container.content = content
+                self.root_container.gradient = bg_gradient
             else:
-                self.page.add(content)
+                self.root_container.content = content
+                self.root_container.gradient = None
+                
+            self._apply_bg_image()
                 
             debug_log(f"Calling page.update(). is_glass={is_glass}, is_mobile={is_mobile}")
             self.page.update()

@@ -5,13 +5,14 @@ import webbrowser
 from pathlib import Path
 
 class SettingsView(ft.Container):
-    def __init__(self, page, settings_manager, download_manager, providers, provider_manager):
+    def __init__(self, page, settings_manager, download_manager, providers, provider_manager, update_bg_callback=None):
         super().__init__()
         self._page = page
         self.settings_manager = settings_manager
         self.download_manager = download_manager
         self.providers = providers
         self.provider_manager = provider_manager
+        self.update_bg_callback = update_bg_callback
         self.expand = True
         self.padding = 20
         
@@ -166,7 +167,7 @@ class SettingsView(ft.Container):
             self.settings_manager.set('show_close_confirmation', e.control.value)
             self._show_snack("Close confirmation " + ("enabled" if e.control.value else "disabled"))
 
-        close_confirmation_switch = ft.Switch(
+        self.close_confirmation_switch = ft.Switch(
             label="Show Close Confirmation Dialog",
             value=self.settings_manager.get('show_close_confirmation', True),
             on_change=on_close_confirmation_change
@@ -293,6 +294,88 @@ class SettingsView(ft.Container):
             on_change=on_color_theme_change
         )
         
+        # Background Image
+        bg_image_path = self.settings_manager.get('bg_image_path', '')
+        bg_image_opacity = self.settings_manager.get('bg_image_opacity', 0.15)
+
+        bg_path_text = ft.Text(f"Current: {os.path.basename(bg_image_path) if bg_image_path else 'None'}", size=12, italic=True)
+        
+        def update_bg_settings():
+            if self.update_bg_callback:
+                self.update_bg_callback()
+            else:
+                path = self.settings_manager.get('bg_image_path', '')
+                op = self.settings_manager.get('bg_image_opacity', 0.15)
+                if path and (os.path.exists(path) or path.startswith("backgrounds/")):
+                    self._page.decoration = ft.BoxDecoration(
+                        image=ft.DecorationImage(
+                            src=path,
+                            fit=ft.BoxFit.COVER,
+                            opacity=op
+                        )
+                    )
+                else:
+                    self._page.decoration = None
+                self._page.update()
+
+        def on_opacity_change(e):
+            self.settings_manager.set('bg_image_opacity', float(e.control.value))
+            update_bg_settings()
+
+        bg_opacity_slider = ft.Slider(
+            min=0.0, max=1.0, divisions=20, value=bg_image_opacity, label="{value}", on_change=on_opacity_change
+        )
+
+        def set_preset_bg(e, path):
+            self.settings_manager.set('bg_image_path', path)
+            bg_path_text.value = f"Current: {os.path.basename(path)}"
+            bg_path_text.update()
+            self._show_snack("Background image updated")
+            update_bg_settings()
+
+        preset_images = [
+            "backgrounds/bg_abstract.png",
+            "backgrounds/bg_nature.png",
+            "backgrounds/bg_cyberpunk.png",
+            "backgrounds/bg_geometric.png",
+        ]
+        
+        preset_thumbnails = ft.Row([
+            ft.Container(
+                content=ft.Image(src=path, width=80, height=45, fit=ft.BoxFit.COVER),
+                border=ft.Border.all(2, ft.Colors.TRANSPARENT),
+                border_radius=5,
+                ink=True,
+                on_click=lambda e, p=path: set_preset_bg(e, p),
+                tooltip=f"Select {os.path.basename(path).split('.')[0].replace('bg_', '').capitalize()}"
+            ) for path in preset_images
+        ], wrap=True, spacing=10)
+
+        async def on_pick_bg_image(e):
+            picker = ft.FilePicker()
+            self._page.services.append(picker)
+            self._page.update()
+            
+            files = await picker.pick_files(
+                dialog_title="Select Background Image",
+                allowed_extensions=["jpg", "jpeg", "png", "webp"]
+            )
+            
+            if files and len(files) > 0:
+                path = files[0].path
+                self.settings_manager.set('bg_image_path', path)
+                bg_path_text.value = f"Current: {os.path.basename(path)}"
+                bg_path_text.update()
+                self._show_snack("Background image updated")
+                update_bg_settings()
+
+        def on_clear_bg_image(e):
+            self.settings_manager.set('bg_image_path', '')
+            bg_path_text.value = "Current: None"
+            bg_path_text.update()
+            self._show_snack("Background image cleared")
+            update_bg_settings()
+
         return ft.Container(
             content=ft.ListView([
                 ft.Text("System", size=20, weight=ft.FontWeight.BOLD),
@@ -308,7 +391,7 @@ class SettingsView(ft.Container):
                 ft.Container(height=10),
                 ft.Row([
                     ft.Icon(ft.Icons.NOTIFICATION_IMPORTANT_ROUNDED),
-                    close_confirmation_switch
+                    self.close_confirmation_switch
                 ], alignment=ft.MainAxisAlignment.START),
                 ft.Text("Show a confirmation dialog when closing the application window.", 
                        size=12, color=ft.Colors.GREY_500),
@@ -324,6 +407,20 @@ class SettingsView(ft.Container):
                 ft.Text("Add color accents to the interface", size=11, 
                        color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
                 ft.Container(content=color_theme_selector, padding=10),
+                
+                ft.Divider(),
+                ft.Text("Background Image:", size=14, weight=ft.FontWeight.BOLD),
+                ft.Text("Choose a preset or set a custom image for the app background", size=11, 
+                       color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
+                preset_thumbnails,
+                ft.Container(height=5),
+                ft.Row([
+                    ft.ElevatedButton("Custom Image", icon=ft.Icons.IMAGE, on_click=on_pick_bg_image),
+                    ft.ElevatedButton("None", icon=ft.Icons.CLEAR, on_click=on_clear_bg_image, color=ft.Colors.RED_400),
+                ]),
+                bg_path_text,
+                ft.Text("Background Sharp / Fade :", size=12),
+                bg_opacity_slider,
                 
             ], expand=True, spacing=10, padding=20),
             expand=True
