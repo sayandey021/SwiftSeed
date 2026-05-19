@@ -125,7 +125,7 @@ def main():
   <Identity
     Name="Saayan.SwiftSeedDesktop"
     Publisher="CN=37E2AF47-D2FC-489C-BDC1-02C989A7B989"
-    Version="2.0.4.0" />
+    Version="2.0.5.0" />
   <Properties>
     <DisplayName>SwiftSeed Desktop</DisplayName>
     <PublisherDisplayName>Saayan</PublisherDisplayName>

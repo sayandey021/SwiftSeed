@@ -4,6 +4,16 @@ import sys
 import webbrowser
 from pathlib import Path
 
+def _resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        # Go up one level from ui/ to src/
+        base_path = os.path.dirname(base_path)
+    return os.path.join(base_path, relative_path)
+
 class SettingsView(ft.Container):
     def __init__(self, page, settings_manager, download_manager, providers, provider_manager, update_bg_callback=None):
         super().__init__()
@@ -306,14 +316,22 @@ class SettingsView(ft.Container):
             else:
                 path = self.settings_manager.get('bg_image_path', '')
                 op = self.settings_manager.get('bg_image_opacity', 0.15)
-                if path and (os.path.exists(path) or path.startswith("backgrounds/")):
-                    self._page.decoration = ft.BoxDecoration(
-                        image=ft.DecorationImage(
-                            src=path,
-                            fit=ft.BoxFit.COVER,
-                            opacity=op
+                if path:
+                    # Resolve preset paths to absolute for PyInstaller/MSIX
+                    if path.startswith("backgrounds/"):
+                        resolved = _resource_path(os.path.join('assets', path))
+                    else:
+                        resolved = path
+                    if os.path.exists(resolved) or path.startswith("backgrounds/"):
+                        self._page.decoration = ft.BoxDecoration(
+                            image=ft.DecorationImage(
+                                src=resolved,
+                                fit=ft.BoxFit.COVER,
+                                opacity=op
+                            )
                         )
-                    )
+                    else:
+                        self._page.decoration = None
                 else:
                     self._page.decoration = None
                 self._page.update()
@@ -342,7 +360,7 @@ class SettingsView(ft.Container):
         
         preset_thumbnails = ft.Row([
             ft.Container(
-                content=ft.Image(src=path, width=80, height=45, fit=ft.BoxFit.COVER),
+                content=ft.Image(src=_resource_path(os.path.join('assets', path)), width=80, height=45, fit=ft.BoxFit.COVER),
                 border=ft.Border.all(2, ft.Colors.TRANSPARENT),
                 border_radius=5,
                 ink=True,

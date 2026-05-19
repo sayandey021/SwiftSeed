@@ -1216,12 +1216,21 @@ class TorrentSearchApp:
         bg_image_path = self.settings_manager.get('bg_image_path', '')
         bg_image_opacity = self.settings_manager.get('bg_image_opacity', 0.15)
         
-        if bg_image_path and (os.path.exists(bg_image_path) or bg_image_path.startswith('backgrounds/')):
-            self.root_container.image = ft.DecorationImage(
-                src=bg_image_path,
-                fit=ft.BoxFit.COVER,
-                opacity=float(bg_image_opacity)
-            )
+        if bg_image_path:
+            # Resolve preset background paths to absolute paths for PyInstaller/MSIX
+            if bg_image_path.startswith('backgrounds/'):
+                resolved_path = resource_path(os.path.join('assets', bg_image_path))
+            else:
+                resolved_path = bg_image_path
+            
+            if os.path.exists(resolved_path) or bg_image_path.startswith('backgrounds/'):
+                self.root_container.image = ft.DecorationImage(
+                    src=resolved_path,
+                    fit=ft.BoxFit.COVER,
+                    opacity=float(bg_image_opacity)
+                )
+            else:
+                self.root_container.image = None
         else:
             self.root_container.image = None
             
