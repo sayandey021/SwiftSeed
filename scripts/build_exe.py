@@ -7,7 +7,7 @@ import glob
 import shutil
 
 # Get the directory of this script
-base_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src_dir = os.path.join(base_dir, 'src')
 main_file = os.path.join(src_dir, 'main.py')
 
@@ -276,20 +276,25 @@ def post_build_copy_dlls():
 
 
 def patch_executable_icons():
-    """Patch flet.exe icon and version info using Flet's own win_utils.
-    
-    Flet ships with win_utils that know how to safely update the PE resources
-    of flet.exe without corrupting its overlay data.  This fixes the taskbar
-    right-click menu showing the Flet logo and description instead of SwiftSeed.
+    """Patch all flet.exe copies with SwiftSeed icon and version info using rcedit.
+
+    This fixes the taskbar right-click menu showing the Flet logo and description
+    instead of SwiftSeed.  Uses rcedit.exe (Electron's resource editor) which is
+    far more reliable than pefile for writing version-info strings.
     """
     icon_path = os.path.join(src_dir, "assets", "icon.ico")
     if not os.path.exists(icon_path):
         print(f"Icon not found at {icon_path}, skipping patch.")
         return
 
+    rcedit_path = os.path.join(base_dir, "scripts", "rcedit.exe")
+    if not os.path.exists(rcedit_path):
+        print(f"rcedit.exe not found at {rcedit_path}, skipping patch.")
+        return
+
     dist_dir = os.path.join(base_dir, "dist", "SwiftSeed")
 
-    # Find all Flet executables
+    # Collect ALL flet.exe / fletd.exe files from both locations
     flet_exes = []
     for root, dirs, files in os.walk(dist_dir):
         for file in files:
@@ -300,39 +305,61 @@ def patch_executable_icons():
         print("No Flet executables found in dist, skipping icon patch.")
         return
 
-    print(f"Found Flet executables: {flet_exes}")
+    print(f"Found {len(flet_exes)} Flet executable(s) to patch:")
+    for exe in flet_exes:
+        print(f"  {exe}")
 
-    # Use Flet's own win_utils to patch icon
-    try:
-        # Add flet package from dist to path so we can import win_utils
-        flet_pkg_dir = os.path.join(dist_dir, "_internal")
-        if flet_pkg_dir not in sys.path:
-            sys.path.insert(0, flet_pkg_dir)
+    import subprocess
 
-        from flet.__pyinstaller.win_utils import update_flet_view_icon, update_flet_view_version_info
+    version_strings = {
+        "ProductName": "SwiftSeed",
+        "FileDescription": "SwiftSeed Torrent Client",
+        "CompanyName": "Sayan Dey",
+        "InternalName": "SwiftSeed",
+        "OriginalFilename": "SwiftSeed.exe",
+        "LegalCopyright": "Copyright (c) 2025 Sayan Dey",
+    }
 
-        for flet_exe in flet_exes:
-            print(f"Patching {os.path.basename(flet_exe)} using Flet win_utils...")
-            update_flet_view_icon(flet_exe, icon_path)
-            update_flet_view_version_info(
-                exe_path=flet_exe,
-                product_name="SwiftSeed",
-                file_description="SwiftSeed",
-                product_version="2.5.0",
-                file_version="2.5.0",
-                company_name="SwiftSeed Team",
-                copyright="Copyright © 2025 SwiftSeed Team",
+    for flet_exe in flet_exes:
+        print(f"\nPatching {flet_exe} ...")
+
+        # 1. Set icon
+        result = subprocess.run(
+            [rcedit_path, flet_exe, "--set-icon", icon_path],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(f"  [OK] Icon set")
+        else:
+            print(f"  [WARN] Icon failed: {result.stderr.strip()}")
+
+        # 2. Set file and product version
+        for ver_flag, ver_val in [
+            ("--set-file-version", "2.5.0.0"),
+            ("--set-product-version", "2.5.0.0"),
+        ]:
+            result = subprocess.run(
+                [rcedit_path, flet_exe, ver_flag, ver_val],
+                capture_output=True, text=True
             )
-            print(f"[OK] {os.path.basename(flet_exe)} patched successfully with win_utils")
+            if result.returncode == 0:
+                print(f"  [OK] {ver_flag.replace('--set-', '')}: {ver_val}")
+            else:
+                print(f"  [WARN] {ver_flag} failed: {result.stderr.strip()}")
 
-    except Exception as e:
-        print(f"Failed to patch executables using Flet win_utils: {e}")
-        import traceback
-        traceback.print_exc()
+        # 3. Set all version-info string fields
+        for key, val in version_strings.items():
+            result = subprocess.run(
+                [rcedit_path, flet_exe, "--set-version-string", key, val],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                print(f"  [OK] {key}: {val}")
+            else:
+                print(f"  [WARN] {key} failed: {result.stderr.strip()}")
 
-    # The local rcedit.exe patch has been removed.
-    # rcedit corrupts the Flutter overlay data appended to flet.exe,
-    # causing the app to silently fail to launch. Flet's win_utils is sufficient.
+        print(f"  [DONE] {os.path.basename(flet_exe)} patched")
+
 
 
 def build_exe():

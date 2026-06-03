@@ -37,6 +37,18 @@ class Torrent:
     category: Optional[Category] = None
     bookmarked: bool = False
     
+    def __post_init__(self):
+        """Attempt to recover full name from magnet URI if scraped name is truncated."""
+        if self.name and (self.name.endswith('...') or '...' in self.name) and self.magnet_uri:
+            try:
+                import urllib.parse
+                parsed = urllib.parse.urlparse(self.magnet_uri)
+                qs = urllib.parse.parse_qs(parsed.query)
+                if 'dn' in qs and qs['dn'] and len(qs['dn'][0]) > len(self.name.replace('...', '')):
+                    self.name = qs['dn'][0]
+            except Exception:
+                pass
+    
     def get_magnet_uri(self) -> str:
         """Get the magnet URI for this torrent."""
         if self.magnet_uri:

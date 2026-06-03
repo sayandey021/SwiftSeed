@@ -147,7 +147,11 @@ class KnabenProvider(SearchProvider):
                     if not title_link:
                         continue
                     
-                    name = title_link.get_text(strip=True)
+                    name = title_link.get('title', '')
+                    text_name = title_link.get_text(strip=True)
+                    if not name or len(text_name) > len(name):
+                        name = text_name
+                    
                     if not name or len(name) < 3:
                         continue
                         

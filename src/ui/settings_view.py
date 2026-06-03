@@ -337,12 +337,57 @@ class SettingsView(ft.Container):
                 self._page.update()
 
         def on_opacity_change(e):
-            self.settings_manager.set('bg_image_opacity', float(e.control.value))
+            self.settings_manager.set('bg_image_opacity', float(e.control.value) / 100.0)
             update_bg_settings()
 
         bg_opacity_slider = ft.Slider(
-            min=0.0, max=1.0, divisions=20, value=bg_image_opacity, label="{value}", on_change=on_opacity_change
+            min=0, max=100, divisions=20, value=bg_image_opacity * 100, label="{value}%", on_change=on_opacity_change
         )
+
+        preset_images = [
+            {"path": "backgrounds/bg_cyberpunk.png", "name": "Neon Grid"},
+            {"path": "backgrounds/bg_abstract.png", "name": "Ethereal"},
+            {"path": "backgrounds/bg_nature.png", "name": "Circuit"},
+            {"path": "backgrounds/bg_geometric.png", "name": "Minimal"},
+        ]
+
+        def get_thumbnail_container(item):
+            path = item["path"]
+            name = item["name"]
+            is_active = self.settings_manager.get('bg_image_path', '') == path
+            
+            border_color = ft.Colors.BLUE_400 if is_active else ft.Colors.TRANSPARENT
+            
+            return ft.Container(
+                content=ft.Stack([
+                    ft.Image(
+                        src=_resource_path(os.path.join('assets', path)), 
+                        width=140, 
+                        height=79, 
+                        fit=ft.BoxFit.COVER,
+                        border_radius=8
+                    ),
+                    ft.Container(
+                        content=ft.Text(name, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                        bgcolor="#99000000",
+                        padding=5,
+                        border_radius=6,
+                        bottom=4,
+                        right=4,
+                    )
+                ]),
+                border=ft.Border.all(2, border_color),
+                border_radius=10,
+                ink=True,
+                on_click=lambda e, p=path: set_preset_bg(e, p),
+                tooltip=f"Select {name}"
+            )
+            
+        preset_thumbnails = ft.Row([get_thumbnail_container(item) for item in preset_images], wrap=True, spacing=10)
+
+        def update_thumbnails():
+            preset_thumbnails.controls = [get_thumbnail_container(item) for item in preset_images]
+            preset_thumbnails.update()
 
         def set_preset_bg(e, path):
             self.settings_manager.set('bg_image_path', path)
@@ -350,24 +395,7 @@ class SettingsView(ft.Container):
             bg_path_text.update()
             self._show_snack("Background image updated")
             update_bg_settings()
-
-        preset_images = [
-            "backgrounds/bg_abstract.png",
-            "backgrounds/bg_nature.png",
-            "backgrounds/bg_cyberpunk.png",
-            "backgrounds/bg_geometric.png",
-        ]
-        
-        preset_thumbnails = ft.Row([
-            ft.Container(
-                content=ft.Image(src=_resource_path(os.path.join('assets', path)), width=80, height=45, fit=ft.BoxFit.COVER),
-                border=ft.Border.all(2, ft.Colors.TRANSPARENT),
-                border_radius=5,
-                ink=True,
-                on_click=lambda e, p=path: set_preset_bg(e, p),
-                tooltip=f"Select {os.path.basename(path).split('.')[0].replace('bg_', '').capitalize()}"
-            ) for path in preset_images
-        ], wrap=True, spacing=10)
+            update_thumbnails()
 
         async def on_pick_bg_image(e):
             picker = ft.FilePicker()
@@ -386,6 +414,7 @@ class SettingsView(ft.Container):
                 bg_path_text.update()
                 self._show_snack("Background image updated")
                 update_bg_settings()
+                update_thumbnails()
 
         def on_clear_bg_image(e):
             self.settings_manager.set('bg_image_path', '')
@@ -393,6 +422,7 @@ class SettingsView(ft.Container):
             bg_path_text.update()
             self._show_snack("Background image cleared")
             update_bg_settings()
+            update_thumbnails()
 
         return ft.Container(
             content=ft.ListView([
@@ -437,7 +467,7 @@ class SettingsView(ft.Container):
                     ft.ElevatedButton("None", icon=ft.Icons.CLEAR, on_click=on_clear_bg_image, color=ft.Colors.RED_400),
                 ]),
                 bg_path_text,
-                ft.Text("Background Sharp / Fade :", size=12),
+                ft.Text("Background Fade :", size=12),
                 bg_opacity_slider,
                 
             ], expand=True, spacing=10, padding=20),

@@ -96,6 +96,15 @@ def main():
     # Update the callback
     instance_manager.check_and_acquire(on_message_callback=handle_instance_message)
     
+    # Force the frozen app to use its own bundled flet.exe (with SwiftSeed
+    # branding) instead of the shared ~/.flet/client/ cache which has
+    # default Flet branding.  Only affects this process.
+    if getattr(sys, 'frozen', False):
+        flet_view_dir = os.path.join(app_dir, '_internal', 'flet_desktop', 'app', 'flet')
+        if os.path.isdir(flet_view_dir):
+            os.environ['FLET_VIEW_PATH'] = flet_view_dir
+            print(f"[Pre-Init] FLET_VIEW_PATH set to bundled client: {flet_view_dir}")
+    
     # Run the app
     try:
         ft.run(

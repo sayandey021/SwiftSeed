@@ -39,6 +39,7 @@ venv.bak/
 # Project specific
 test_downloads/
 logs/
+temp/
 *.log
 academic_debug.log
 icon_error.log
@@ -49,3 +50,7 @@ installer/
 dump.rdb
 .DS_Store
 Thumbs.db
+
+.flet_dev_client/
+
+.flet_dev_client_v2/

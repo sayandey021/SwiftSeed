@@ -81,120 +81,31 @@ class TorrentSearchApp:
         self.page.window.on_event = self._on_window_event # Generic window events
         self.tray_icon = None  # Will be initialized after UI setup
         
-        # Force window icon AND taskbar branding using Win32 API
+        # Force window icon using Win32 API
         if sys.platform == 'win32':
-            def force_icon_and_branding():
+            def force_window_icon():
                 try:
                     import time
                     import ctypes
                     import ctypes.wintypes
-                    import comtypes
-                    from comtypes import GUID, HRESULT, COMMETHOD
                     
-                    # Get our own process ID — only brand windows belonging to us
-                    my_pid = os.getpid()
-                    
-                    # --- COM definitions for IPropertyStore ---
-                    # These let us set per-window AppUserModelID and Relaunch properties
-                    # which control the taskbar right-click menu name and icon.
-                    
-                    class PROPERTYKEY(ctypes.Structure):
-                        _fields_ = [
-                            ('fmtid', GUID),
-                            ('pid', ctypes.wintypes.DWORD),
-                        ]
-                    
-                    # Property keys for AppUserModel
-                    # {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}
-                    _AUMID_FMTID = GUID('{9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}')
-                    PKEY_AppUserModel_ID = PROPERTYKEY(_AUMID_FMTID, 5)
-                    PKEY_AppUserModel_RelaunchCommand = PROPERTYKEY(_AUMID_FMTID, 2)
-                    PKEY_AppUserModel_RelaunchDisplayNameResource = PROPERTYKEY(_AUMID_FMTID, 4)
-                    PKEY_AppUserModel_RelaunchIconResource = PROPERTYKEY(_AUMID_FMTID, 3)
-                    
-                    # PROPVARIANT for VT_LPWSTR (string values)
-                    VT_LPWSTR = 31
-                    class PROPVARIANT(ctypes.Structure):
-                        _fields_ = [
-                            ('vt', ctypes.wintypes.WORD),
-                            ('reserved1', ctypes.wintypes.WORD),
-                            ('reserved2', ctypes.wintypes.WORD),
-                            ('reserved3', ctypes.wintypes.WORD),
-                            ('pwszVal', ctypes.wintypes.LPWSTR),
-                            ('padding', ctypes.c_void_p),
-                        ]
-                    
-                    # IPropertyStore COM interface
-                    class IPropertyStore(comtypes.IUnknown):
-                        _iid_ = GUID('{886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}')
-                        _methods_ = [
-                            COMMETHOD([], HRESULT, 'GetCount',
-                                      (['out'], ctypes.POINTER(ctypes.wintypes.DWORD), 'cProps')),
-                            COMMETHOD([], HRESULT, 'GetAt',
-                                      (['in'], ctypes.wintypes.DWORD, 'iProp'),
-                                      (['out'], ctypes.POINTER(PROPERTYKEY), 'pkey')),
-                            COMMETHOD([], HRESULT, 'GetValue',
-                                      (['in'], ctypes.POINTER(PROPERTYKEY), 'key'),
-                                      (['out'], ctypes.POINTER(PROPVARIANT), 'pv')),
-                            COMMETHOD([], HRESULT, 'SetValue',
-                                      (['in'], ctypes.POINTER(PROPERTYKEY), 'key'),
-                                      (['in'], ctypes.POINTER(PROPVARIANT), 'propvar')),
-                            COMMETHOD([], HRESULT, 'Commit'),
-                        ]
-                    
-                    # SHGetPropertyStoreForWindow
-                    _SHGetPropertyStoreForWindow = ctypes.windll.shell32.SHGetPropertyStoreForWindow
-                    _SHGetPropertyStoreForWindow.argtypes = [
-                        ctypes.wintypes.HWND,
-                        ctypes.POINTER(GUID),
-                        ctypes.POINTER(ctypes.POINTER(IPropertyStore)),
-                    ]
-                    _SHGetPropertyStoreForWindow.restype = HRESULT
-                    
-                    def set_window_property(hwnd, pkey, value_str):
-                        """Set a string property on a window's property store."""
-                        ps = ctypes.POINTER(IPropertyStore)()
-                        iid = IPropertyStore._iid_
-                        hr = _SHGetPropertyStoreForWindow(hwnd, ctypes.byref(iid), ctypes.byref(ps))
-                        if hr != 0:
-                            return False
-                        try:
-                            pv = PROPVARIANT()
-                            pv.vt = VT_LPWSTR
-                            pv.pwszVal = value_str
-                            ps.SetValue(ctypes.byref(pkey), ctypes.byref(pv))
-                            ps.Commit()
-                            return True
-                        finally:
-                            ps.Release()
-                    
-                    # --- End COM definitions ---
-                    
-                    log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon_debug.log")
-                    
-                    def log(msg):
-                        try:
-                            with open(log_file, "a") as f:
-                                f.write(f"{time.strftime('%H:%M:%S')} - {msg}\n")
-                        except: pass
-
-                    log("Starting aggressive icon + branding enforcement...")
+                    # Set process-level AppUserModelID (ensures taskbar uses our identity)
+                    app_id = 'SayanDey.SwiftSeed.TorrentClient.v5'
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
                     
                     # Get absolute path to icon
                     if getattr(sys, 'frozen', False):
                         base_path = sys._MEIPASS
-                        exe_path = sys.executable  # Path to SwiftSeed.exe
                     else:
                         base_path = os.path.dirname(os.path.abspath(__file__))
-                        exe_path = os.path.abspath(__file__)
                     
                     icon_path = os.path.join(base_path, "assets", "icon.ico")
                     
                     if not os.path.exists(icon_path):
-                        log(f"! Icon not found at {icon_path}")
+                        print(f"DEBUG: Icon not found at {icon_path}")
                         return
 
-                    # Load icons once
+                    # Load icons at multiple sizes for best taskbar/title bar display
                     h_icon_small = win32gui.LoadImage(
                         0, icon_path, win32con.IMAGE_ICON,
                         16, 16, win32con.LR_LOADFROMFILE
@@ -203,15 +114,19 @@ class TorrentSearchApp:
                         0, icon_path, win32con.IMAGE_ICON,
                         32, 32, win32con.LR_LOADFROMFILE
                     )
+                    
+                    if not h_icon_small or not h_icon_large:
+                        print("DEBUG: Failed to load icon handles")
+                        return
 
-                    log("Icons loaded successfully")
+                    print(f"DEBUG: Icons loaded from {icon_path}")
                     
-                    # Track which windows we've already branded
-                    branded_hwnds = set()
-                    
-                    # Keep trying to find and patch the window
+                    # Apply icon repeatedly to survive Flutter engine resets
+                    # Flutter's desktop embedding recreates/resets window properties
                     start_time = time.time()
-                    while True:
+                    icons_applied = False
+                    
+                    while time.time() - start_time < 20.0:
                         def callback(hwnd, windows):
                             if win32gui.IsWindowVisible(hwnd):
                                 title = win32gui.GetWindowText(hwnd)
@@ -222,61 +137,46 @@ class TorrentSearchApp:
                         windows = []
                         win32gui.EnumWindows(callback, windows)
                         
-                        if windows:
-                            log(f"Found {len(windows)} windows (pid={my_pid})")
-                        
                         for hwnd in windows:
                             try:
-                                # Set per-window icon
+                                # Set per-window icon (affects title bar + taskbar)
                                 win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, h_icon_small)
                                 win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, h_icon_large)
                                 
-                                # Set class icon
+                                # Set class-level icon (affects all windows of this class)
                                 try:
-                                    win32gui.SetClassLong(hwnd, -14, h_icon_large)  # GCL_HICON
-                                    win32gui.SetClassLong(hwnd, -34, h_icon_small)  # GCL_HICONSM
+                                    ctypes.windll.user32.SetClassLongPtrW(hwnd, -14, h_icon_large)   # GCLP_HICON
+                                    ctypes.windll.user32.SetClassLongPtrW(hwnd, -34, h_icon_small)   # GCLP_HICONSM
                                 except:
-                                    pass
-                                
-                                # Set AppUserModelID and Relaunch properties on the window
-                                # This overrides the Flet default and tells Windows taskbar
-                                # to show "SwiftSeed" with our icon in the right-click menu
-                                if hwnd not in branded_hwnds:
                                     try:
-                                        app_id = 'SayanDey.SwiftSeed.TorrentClient.v5'
-                                        set_window_property(hwnd, PKEY_AppUserModel_ID, app_id)
-                                        # PKEY_AppUserModel_RelaunchDisplayNameResource requires an indirect string (e.g. @file,-id)
-                                        # Passing 'SwiftSeed' is invalid and may break taskbar naming. Let Windows use the executable's FileDescription.
-                                        # set_window_property(hwnd, PKEY_AppUserModel_RelaunchDisplayNameResource, 'SwiftSeed')
-                                        set_window_property(hwnd, PKEY_AppUserModel_RelaunchCommand, exe_path)
-                                        set_window_property(hwnd, PKEY_AppUserModel_RelaunchIconResource, icon_path)
-                                        branded_hwnds.add(hwnd)
-                                        log(f"Set AppUserModelID + Relaunch props on hwnd {hwnd}")
-                                        
-
-                                    except Exception as e:
-                                        log(f"Error setting window properties for hwnd {hwnd}: {e}")
+                                        win32gui.SetClassLong(hwnd, -14, h_icon_large)
+                                        win32gui.SetClassLong(hwnd, -34, h_icon_small)
+                                    except:
+                                        pass
                                 
-                                # Force refresh
-                                win32gui.InvalidateRect(hwnd, None, True)
+                                icons_applied = True
                             except Exception as e:
-                                log(f"Error setting icon for hwnd {hwnd}: {e}")
+                                print(f"DEBUG: Error setting icon for hwnd {hwnd}: {e}")
                         
-                        # Check very frequently for the first 5 seconds to catch the window instantly
-                        if time.time() - start_time < 5.0:
+                        # Poll fast initially, then slow down
+                        if time.time() - start_time < 3.0:
                             time.sleep(0.05)
+                        elif time.time() - start_time < 10.0:
+                            time.sleep(0.5)
                         else:
-                            time.sleep(1)
+                            time.sleep(2.0)
+                    
+                    if icons_applied:
+                        print("DEBUG: Window icon enforcement complete")
+                    else:
+                        print("DEBUG: No SwiftSeed windows found within timeout")
                         
                 except Exception as e:
-                    try:
-                        with open("icon_error.log", "w") as f:
-                            f.write(str(e))
-                    except: pass
+                    print(f"DEBUG: Icon enforcement error: {e}")
             
             # Run in background thread
             import threading
-            threading.Thread(target=force_icon_and_branding, daemon=True).start()
+            threading.Thread(target=force_window_icon, daemon=True).start()
 
         # Initialize managers
         self.settings_manager = SettingsManager()
@@ -1159,17 +1059,30 @@ class TorrentSearchApp:
                 except: pass
             
             # 3. Final definitive exit
-            print("PROCESS: Finalizing process exit (Safe Exit).")
-            import os
+            print("PROCESS: Finalizing process exit (Safe Exit)")
             
-            # For Windows, also kill the flet UI process specifically to be sure the UI is gone
+            # For Windows, kill the process tree (Python + spawned Flet UI) specifically
             if sys.platform == 'win32':
-                try: 
+                try:
                     import subprocess
-                    subprocess.Popen("taskkill /F /IM flet.exe /T", shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                    import os
+                    
+                    # Tell Flet to destroy its window gracefully first if possible
+                    if hasattr(self, 'page') and hasattr(self.page, 'window'):
+                        try:
+                            self.page.window.destroy()
+                        except:
+                            pass
+                            
+                    # Synchronously kill the process tree. This will kill the python process
+                    # and all children (like flet.exe) preventing orphaned UI windows.
+                    # We do NOT call os._exit(0) immediately after because taskkill needs 
+                    # the parent PID to remain alive for a split second to enumerate children.
+                    subprocess.run(f"taskkill /F /PID {os.getpid()} /T", shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
                 except: pass
-
-            # Safe hard exit
+            
+            # Safe hard exit for non-Windows platforms or if taskkill fails
+            import os
             os._exit(0)
         except Exception as e:
             print(f"CRITICAL: Background exit failure: {e}")
@@ -1487,7 +1400,7 @@ class TorrentSearchApp:
                 ),
                 ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
-                ft.Text("Version 2.5", size=20, weight=ft.FontWeight.W_500),
+                ft.Text("Version 2.0", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
                 ft.Text("Developed by Sayan Dey", size=18),
                 ft.Container(height=10),
@@ -3195,7 +3108,7 @@ class TorrentSearchApp:
                 content=ft.Column([
                     ft.ListTile(
                         leading=ft.Icon(ft.Icons.DOWNLOAD, color=icon_color),
-                        title=ft.Text(torrent.name, weight=ft.FontWeight.BOLD),
+                        title=ft.Text(torrent.name, weight=ft.FontWeight.BOLD, tooltip=torrent.name),
                         subtitle=ft.Column([
                             ft.Text(f"{torrent.size} • {('N/A' if torrent.seeders == -1 else torrent.seeders)} Seeds • {('N/A' if torrent.peers == -1 else torrent.peers)} Peers • {torrent.provider_name}"),
                             ft.Row(tags, spacing=5)
@@ -3263,7 +3176,7 @@ class TorrentSearchApp:
                         width=20,
                     ),
                     # Name - expandable
-                    ft.Text(torrent.name, size=13, expand=True, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, weight=ft.FontWeight.W_500),
+                    ft.Text(torrent.name, size=13, expand=True, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS, weight=ft.FontWeight.W_500, tooltip=torrent.name),
                     # Size
                     ft.Text(torrent.size, size=11, width=70, text_align=ft.TextAlign.RIGHT, 
                            color=ft.Colors.GREY_500),
@@ -4233,8 +4146,11 @@ class TorrentSearchApp:
 
     def _open_url(self, torrent):
         if hasattr(torrent, 'description_url') and torrent.description_url:
-            webbrowser.open(torrent.description_url)
-            self._show_snack("Opening in browser...")
+            if torrent.description_url.startswith('magnet:'):
+                self._show_snack("No web page available for this torrent")
+            else:
+                webbrowser.open(torrent.description_url)
+                self._show_snack("Opening in browser...")
         else:
             self._show_snack("No URL available")
 
@@ -4531,7 +4447,7 @@ class TorrentSearchApp:
                                     ft.Column([
                                         ft.ListTile(
                                             leading=ft.Icon(ft.Icons.DOWNLOAD, color=health_color),
-                                            title=ft.Text(name, weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                                            title=ft.Text(name, weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, tooltip=name),
                                             subtitle=ft.Column([
                                                 ft.Text(f"{size} • {('N/A' if seeders == -1 else seeders)} Seeds • {('N/A' if peers == -1 else peers)} Peers • {provider}"),
                                                 ft.Container(
@@ -5120,7 +5036,7 @@ class TorrentSearchApp:
 def main(page: ft.Page):
     # Set Windows App User Model ID for proper taskbar branding
     # This ensures Windows shows "SwiftSeed" in the taskbar jump list instead of "Flet"
-    if sys.platform == 'win32':
+    if sys.platform == 'win32' and getattr(sys, 'frozen', False):
         try:
             import ctypes
             # Set the App User Model ID to a unique identifier for SwiftSeed
@@ -5329,19 +5245,30 @@ if __name__ == "__main__":
         # Continue anyway if check fails
     # -----------------------------
     
-    # When frozen with PyInstaller, Flet might fail to locate its bundled executable
-    # and fallback to downloading an unpatched fresh one from the internet.
-    # To prevent this, we explicitly tell Flet where the patched executable directory is.
-    # [Removed] In Flet 0.80+, os.walk finds the wrong flet.exe causing silent crashes.
-    # Flet handles its own executable resolution correctly now.
+    # -----------------------------
+    # BRANDING FIX: Force Flet to use our patched client
+    # -----------------------------
+    if getattr(sys, 'frozen', False):
+        # In frozen mode (PyInstaller onedir), use the bundled client
+        app_dir = os.path.dirname(sys.executable)
+        flet_view_dir = os.path.join(app_dir, '_internal', 'flet_desktop', 'app', 'flet')
+        if os.path.isdir(flet_view_dir):
+            os.environ['FLET_VIEW_PATH'] = flet_view_dir
+            print(f"FLET_VIEW_PATH set to bundled client: {flet_view_dir}")
+    else:
+        # In dev mode, use a local patched copy to avoid breaking other Flet apps
+        dev_client_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.flet_dev_client_v2', 'flet')
+        if os.path.isdir(dev_client_dir):
+            os.environ['FLET_VIEW_PATH'] = os.path.abspath(dev_client_dir)
+            print(f"FLET_VIEW_PATH set to dev client: {dev_client_dir}")
 
     # Start the app with explicit name configuration
-    print("Calling ft.run()...")
+    print("Calling ft.app()...")
     sys.stdout.flush()
     try:
         ft.app(
             target=main, 
-            assets_dir="assets",
+            assets_dir=resource_path("assets"),
             name="SwiftSeed",
             view=ft.AppView.FLET_APP
         )

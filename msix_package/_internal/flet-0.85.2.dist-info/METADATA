@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: flet
-Version: 0.85.1
+Version: 0.85.2
 Summary: Flet for Python - easily build interactive multi-platform apps in Python
 Author-email: "Appveyor Systems Inc." <hello@flet.dev>
 License-Expression: Apache-2.0
@@ -9,23 +9,23 @@ Project-URL: Repository, https://github.com/flet-dev/flet
 Project-URL: Documentation, https://flet.dev/docs/
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: flet-cli==0.85.1; extra == "cli"
-Requires-Dist: flet-web==0.85.1; extra == "web"
+Requires-Dist: flet-cli==0.85.2; extra == "cli"
+Requires-Dist: flet-web==0.85.2; extra == "web"
 Requires-Dist: oauthlib>=3.2.2; platform_system != "Emscripten"
 Requires-Dist: httpx>=0.28.1; platform_system != "Emscripten"
 Requires-Dist: repath>=0.9.0
 Requires-Dist: msgpack>=1.1.0
 Requires-Dist: typing-extensions; python_version < "3.11"
 Provides-Extra: all
-Requires-Dist: flet-cli==0.85.1; extra == "all"
-Requires-Dist: flet-web==0.85.1; extra == "all"
-Requires-Dist: flet-desktop==0.85.1; extra == "all"
+Requires-Dist: flet-cli==0.85.2; extra == "all"
+Requires-Dist: flet-web==0.85.2; extra == "all"
+Requires-Dist: flet-desktop==0.85.2; extra == "all"
 Provides-Extra: cli
-Requires-Dist: flet-cli==0.85.1; extra == "cli"
+Requires-Dist: flet-cli==0.85.2; extra == "cli"
 Provides-Extra: desktop
-Requires-Dist: flet-desktop==0.85.1; extra == "desktop"
+Requires-Dist: flet-desktop==0.85.2; extra == "desktop"
 Provides-Extra: web
-Requires-Dist: flet-web==0.85.1; extra == "web"
+Requires-Dist: flet-web==0.85.2; extra == "web"
 
 <p align="center">
   <a href="https://flet.dev"><img src="https://raw.githubusercontent.com/flet-dev/flet/refs/heads/main/media/logo/flet-logo.svg" height="150" alt="Flet logo"></a>
