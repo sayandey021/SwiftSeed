@@ -47,7 +47,7 @@ def bump_version(new_version):
         {
             "file": "src/main.py",
             "replacements": [
-                (r'ft\.Text\("Version [\d\.]+"', f'ft.Text("Version {v_short}"')
+                (r'ft\.Text\("Version [\d\.]+"', f'ft.Text("Version {v_medium}"')
             ]
         },
         # 5. scripts/build_exe.py
@@ -71,6 +71,28 @@ def bump_version(new_version):
             "file": "../store/AppxManifest_TEMPLATE.xml",
             "replacements": [
                 (r'\bVersion="[\d\.]+"', f'Version="{v_full}"')
+            ]
+        },
+        # 8. src/pyproject.toml
+        {
+            "file": "src/pyproject.toml",
+            "replacements": [
+                (r'version = "[\d\.]+"', f'version = "{v_medium}"')
+            ]
+        },
+        # 9. msix_package/AppxManifest.xml
+        {
+            "file": "msix_package/AppxManifest.xml",
+            "replacements": [
+                (r'\bVersion="[\d\.]+"', f'Version="{v_full}"')
+            ]
+        },
+        # 10. scripts/build_system.py
+        {
+            "file": "scripts/build_system.py",
+            "replacements": [
+                (r'"--set-file-version", "[\d\.]+"', f'"--set-file-version", "{v_full}"'),
+                (r'"--set-product-version", "[\d\.]+"', f'"--set-product-version", "{v_full}"')
             ]
         }
     ]

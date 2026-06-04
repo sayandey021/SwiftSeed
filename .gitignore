@@ -54,3 +54,5 @@ Thumbs.db
 .flet_dev_client/
 
 .flet_dev_client_v2/
+msix_package/
+log/

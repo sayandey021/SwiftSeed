@@ -164,9 +164,10 @@ def interactive_menu():
         print("  [2] Build Windows Installer Only")
         print("  [3] Build EVERYTHING (Portable + Installer)")
         print("  [4] Build MSIX Package")
-        print("  [5] Exit\n")
+        print("  [5] Bump Version")
+        print("  [6] Exit\n")
         
-        choice = input("Enter your choice (1-5): ").strip()
+        choice = input("Enter your choice (1-6): ").strip()
         if choice == '1':
             build_portable()
         elif choice == '2':
@@ -177,6 +178,12 @@ def interactive_menu():
         elif choice == '4':
             build_msix()
         elif choice == '5':
+            new_ver = input("Enter new version (e.g. 2.0.8): ").strip()
+            if new_ver:
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                bump_script = os.path.join(base_dir, "scripts", "bump_version.py")
+                subprocess.run([sys.executable, bump_script, new_ver])
+        elif choice == '6':
             break
         else:
             print("Invalid choice.")
