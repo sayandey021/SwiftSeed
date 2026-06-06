@@ -19,7 +19,7 @@ class ThePirateBayProvider(SearchProvider):
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.UNSAFE,
             safety_reason="Many malware reports due to inadequate moderation",
-            enabled_by_default=False,
+            enabled_by_default=True,
             language="Multi",
         )
     

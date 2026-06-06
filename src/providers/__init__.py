@@ -34,7 +34,6 @@ from .additional import (
     LimeTorrentsProvider2,
     RuTrackerProvider,
     TorrentFunkProvider,
-    DemonoidProvider,
     MagnetDLProvider,
     YifyProvider,
     # Legal providers (working with XML API!)
@@ -58,13 +57,21 @@ from .additional import (
     EHentaiProvider,
     TorrentMacProvider,
     FreeJavTorrentProvider,
-    PiratesParadiseProvider,
-    MagnetCatProvider,
     GamesTorrentsProvider,
     SkidrowRepackProvider,
     FTUAppsProvider,
     CroTorrentsProvider,
     PlazaPCGamesProvider,
+    SolidTorrentsProvider,
+    PirateiroProvider,
+    Torrent911Provider,
+    NekobtProvider,
+    ExttoProvider,
+    DmhyProvider,
+    ZamundaRipProvider,
+    GogGamesProvider,
+    PcGamesTorrentsProvider,
+    FileMoodProvider,
 )
 
 __all__ = [
@@ -96,8 +103,11 @@ def get_all_providers():
         BigFanGroupProvider(),  # Anime - BigFanGroup (Russian)
         NNMClubProvider(),  # Russian - Verified accessible
         CpasbienProvider(),  # French - Movies, Series, Music
-        PiratesParadiseProvider(),  # Movies & TV - Clean site, no ads
-        MagnetCatProvider(),  # General - Magnet search engine
+        SolidTorrentsProvider(),  # All - SolidTorrents
+        PirateiroProvider(),  # All - Pirateiro
+        Torrent911Provider(),  # All - Torrent911 (French)
+        ExttoProvider(),  # All - extto.org
+        ZamundaRipProvider(),  # All - zamunda.rip (Bulgarian)
         
         # === GENERAL TORRENT SITES (disabled by default) ===
         KickAssTorrentsProvider(),  # KickAss - Working via kickass.cm
@@ -110,7 +120,6 @@ def get_all_providers():
         Torrentz2Provider(),  # Torrentz2 - Meta-search
         LimeTorrentsProvider2(),  # LimeTorrents - Has popups
         TorrentFunkProvider(),  # TorrentFunk
-        DemonoidProvider(),  # Demonoid - Classic
         MagnetDLProvider(),  # MagnetDL - Direct magnets
         KinozalProvider(),  # Kinozal - Russian Movies
 
@@ -127,6 +136,8 @@ def get_all_providers():
         
         # === ANIME ===
         NyaaProvider(),  # Anime - Best for anime
+        NekobtProvider(),  # Anime - nekobt.to
+        DmhyProvider(),  # Anime - dmhy.org (Chinese)
         # AnimeToshoProvider(),  # Moved to working
         # TokyoToshokanProvider(),  # Moved to working
         
@@ -155,4 +166,11 @@ def get_all_providers():
         XXXClubProvider(),  # Porn
         EHentaiProvider(),  # Porn - Hentai
         FreeJavTorrentProvider(),  # Porn - JAV
+        
+        # === NEW ===
+        GogGamesProvider(), # Games - GOG-Games.to
+        PcGamesTorrentsProvider(), # Games - PCGamesTorrents.com
+        
+        # === SEARCH ENGINES ===
+        FileMoodProvider(), # All - FileMood torrent search
     ]

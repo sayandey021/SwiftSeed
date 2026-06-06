@@ -387,7 +387,13 @@ class DownloadDialog(ft.AlertDialog):
         
         # Build file tree structure
         tree = {}
-        for file_info in self.files:
+        MAX_UI_FILES = 1000
+        
+        display_files = self.files
+        if len(self.files) > MAX_UI_FILES:
+            display_files = self.files[:MAX_UI_FILES]
+            
+        for file_info in display_files:
             normalized_path = file_info['name'].replace('\\', '/')
             path_parts = [p for p in normalized_path.split('/') if p]
             
@@ -580,6 +586,16 @@ class DownloadDialog(ft.AlertDialog):
                 bgcolor=ft.Colors.BLUE_50 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.BLUE_GREY_900,
                 border_radius=6,
             )
+        elif len(self.files) > 1000:
+            warning_container = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color=ft.Colors.AMBER, size=20),
+                    ft.Text(f"Showing 1000 of {len(self.files)} files. The rest will download automatically.", size=11, color=ft.Colors.AMBER),
+                ], spacing=8),
+                padding=8,
+                bgcolor=ft.Colors.AMBER_50 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.with_opacity(0.1, ft.Colors.AMBER),
+                border_radius=6,
+            )
         
         files_panel = ft.Container(
             content=ft.Column([
@@ -660,6 +676,14 @@ class DownloadDialog(ft.AlertDialog):
                         file_data = self.files[idx].copy()
                         file_data['priority'] = self.file_priorities.get(idx, 2)
                         selected.append(file_data)
+                        
+        # Append hidden files automatically if there are any
+        MAX_UI_FILES = 1000
+        if len(self.files) > MAX_UI_FILES:
+            for file_info in self.files[MAX_UI_FILES:]:
+                file_data = file_info.copy()
+                file_data['priority'] = 2  # Default Normal
+                selected.append(file_data)
         
         print(f"DEBUG [_on_start_download]: Selected files count: {len(selected)}")
         for f in selected:

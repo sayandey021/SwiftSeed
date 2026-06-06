@@ -3,6 +3,7 @@ import time
 import os
 import sys
 import json
+import tempfile
 from enum import Enum
 from pathlib import Path
 
@@ -588,7 +589,7 @@ class TorrentManager:
             
         # Temp and State paths in user's app data directory (not app root - it's read-only for MSIX)
         self._temp_path = self.settings_manager.get('temp_folder', 
-            os.path.join(app_data_dir, "temp"))
+            os.path.join(tempfile.gettempdir(), "SwiftSeed Download"))
         self.state_path = os.path.join(app_data_dir, ".torrent_state")
         
         # Create directories
@@ -639,6 +640,16 @@ class TorrentManager:
         """Set temp path"""
         self._temp_path = value
         os.makedirs(self._temp_path, exist_ok=True)
+    
+    def set_download_limit(self, limit_bytes):
+        """Set global download limit in bytes per second (0 = unlimited)"""
+        if getattr(self, 'session', None):
+            self.session.apply_settings({'download_rate_limit': limit_bytes})
+            
+    def set_upload_limit(self, limit_bytes):
+        """Set global upload limit in bytes per second (0 = unlimited)"""
+        if getattr(self, 'session', None):
+            self.session.apply_settings({'upload_rate_limit': limit_bytes})
     
     def _init_session(self):
         """Initialize libtorrent session"""
@@ -1186,7 +1197,9 @@ class TorrentManager:
                 if download_id in self.torrents:
                     print(f"DEBUG: Torrent {download_id} already exists. Returning existing object.")
                     existing = self.torrents[download_id]
-                    # Don't modify the existing download - let caller handle duplicates
+                    # Mark as duplicate so callers know NOT to remove/cancel this download
+                    existing.is_newly_added = False
+                    existing.is_duplicate = True
                     return existing
             
             # Create download object

@@ -36,6 +36,18 @@ class FileAssociationManager:
             return False
             
         try:
+            # First check UserChoice (Windows 10/11)
+            try:
+                key2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                     r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.torrent\UserChoice", 
+                                     0, winreg.KEY_READ)
+                prog_id, _ = winreg.QueryValueEx(key2, "ProgId")
+                winreg.CloseKey(key2)
+                if prog_id and prog_id != "SwiftSeed.TorrentFile":
+                    return False
+            except Exception:
+                pass
+
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.torrent", 0, winreg.KEY_READ)
             value, _ = winreg.QueryValueEx(key, "")
             winreg.CloseKey(key)
@@ -43,17 +55,6 @@ class FileAssociationManager:
             # Check if it points to our app
             if value == "SwiftSeed.TorrentFile":
                 return True
-                
-            # Also check the default program
-            try:
-                key2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
-                                     r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.torrent\UserChoice", 
-                                     0, winreg.KEY_READ)
-                prog_id, _ = winreg.QueryValueEx(key2, "ProgId")
-                winreg.CloseKey(key2)
-                return prog_id == "SwiftSeed.TorrentFile"
-            except:
-                pass
                 
             return False
         except FileNotFoundError:
@@ -67,6 +68,27 @@ class FileAssociationManager:
         if not self.is_running_as_executable():
             return False
             
+        # Check UserChoice first (Windows 10/11)
+        try:
+            key2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                 r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\magnet\UserChoice", 
+                                 0, winreg.KEY_READ)
+            prog_id, _ = winreg.QueryValueEx(key2, "ProgId")
+            winreg.CloseKey(key2)
+            
+            if prog_id and prog_id.lower() != "magnet":
+                # Check if this ProgId points to our executable
+                try:
+                    cmd_key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, f"{prog_id}\\shell\\open\\command", 0, winreg.KEY_READ)
+                    cmd_value, _ = winreg.QueryValueEx(cmd_key, "")
+                    winreg.CloseKey(cmd_key)
+                    if self.exe_path not in cmd_value:
+                        return False
+                except Exception:
+                    return False
+        except Exception:
+            pass
+
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\magnet\shell\open\command", 0, winreg.KEY_READ)
             value, _ = winreg.QueryValueEx(key, "")
@@ -86,6 +108,12 @@ class FileAssociationManager:
             return False, "Can only register when running as executable"
             
         try:
+            # Remove Windows 10/11 UserChoice if it exists to force Windows to use our new association
+            try:
+                self._delete_key_recursive(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.torrent\UserChoice")
+            except Exception:
+                pass
+
             # Create ProgID for .torrent files
             prog_id_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\SwiftSeed.TorrentFile")
             winreg.SetValue(prog_id_key, "", winreg.REG_SZ, "Torrent File")
@@ -119,6 +147,10 @@ class FileAssociationManager:
             winreg.SetValue(ext_key, "", winreg.REG_SZ, "SwiftSeed.TorrentFile")
             winreg.CloseKey(ext_key)
             
+            if not self.is_torrent_handler():
+                self.open_windows_default_apps()
+                return True, "Opened Windows Settings. Please select SwiftSeed."
+            
             print("[OK] Registered .torrent file handler")
             return True, "Successfully registered .torrent handler"
         except Exception as e:
@@ -132,6 +164,12 @@ class FileAssociationManager:
             return False, "Can only register when running as executable"
             
         try:
+            # Remove Windows 10/11 UserChoice if it exists to force Windows to use our new association
+            try:
+                self._delete_key_recursive(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\magnet\UserChoice")
+            except Exception:
+                pass
+
             # Create magnet protocol handler
             magnet_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\magnet")
             winreg.SetValue(magnet_key, "", winreg.REG_SZ, "URL:Magnet Protocol")
@@ -147,6 +185,10 @@ class FileAssociationManager:
             command_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\magnet\shell\open\command")
             winreg.SetValue(command_key, "", winreg.REG_SZ, f'"{self.exe_path}" "%1"')
             winreg.CloseKey(command_key)
+            
+            if not self.is_magnet_handler():
+                self.open_windows_default_apps()
+                return True, "Opened Windows Settings. Please select SwiftSeed."
             
             print("[OK] Registered magnet: protocol handler")
             return True, "Successfully registered magnet: handler"

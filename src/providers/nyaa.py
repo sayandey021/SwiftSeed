@@ -19,7 +19,7 @@ class NyaaProvider(SearchProvider):
             url="https://nyaa.si",
             specialized_category=Category.ANIME,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            enabled_by_default=False,
             language="Multi",
         )
     

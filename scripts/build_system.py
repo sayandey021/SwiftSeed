@@ -144,9 +144,9 @@ def patch_msix_flet_exes(pkg_root):
         subprocess.run([rcedit_path, flet_exe, "--set-icon", icon_path],
                        capture_output=True, text=True)
         # Versions
-        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.5.0.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.0.0"],
                        capture_output=True, text=True)
-        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.5.0.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.0.0"],
                        capture_output=True, text=True)
         # String fields
         for key, val in version_strings.items():
@@ -176,6 +176,7 @@ def interactive_menu():
             build_portable()
             build_installer()
         elif choice == '4':
+            build_portable()
             build_msix()
         elif choice == '5':
             new_ver = input("Enter new version (e.g. 2.0.8): ").strip()
@@ -205,6 +206,7 @@ if __name__ == "__main__":
         build_portable()
         build_installer()
     elif args.msix:
+        build_portable()
         build_msix()
     else:
         interactive_menu()

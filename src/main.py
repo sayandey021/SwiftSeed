@@ -21,7 +21,7 @@ def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
+        base_path = sys._MEIPASS  # type: ignore
     except Exception:
         base_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -69,11 +69,11 @@ class TorrentSearchApp:
         
         # System Tray Setup
         self.page.window.prevent_close = True
-        self.page.on_window_event = self._on_window_event  # Page-level event
+        self.page.on_window_event = self._on_window_event  # Page-level event  # type: ignore
         
         # Modern Flet (0.21.0+) specific close handler
         try:
-            self.page.window.on_close = lambda _: self._show_exit_dialog()
+            self.page.window.on_close = lambda _: self._show_exit_dialog()  # type: ignore
             print("DEBUG: Successfully set page.window.on_close")
         except Exception as ex:
             print(f"DEBUG: Could not set page.window.on_close: {ex}")
@@ -95,7 +95,7 @@ class TorrentSearchApp:
                     
                     # Get absolute path to icon
                     if getattr(sys, 'frozen', False):
-                        base_path = sys._MEIPASS
+                        base_path = sys._MEIPASS  # type: ignore
                     else:
                         base_path = os.path.dirname(os.path.abspath(__file__))
                     
@@ -140,8 +140,8 @@ class TorrentSearchApp:
                         for hwnd in windows:
                             try:
                                 # Set per-window icon (affects title bar + taskbar)
-                                win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, h_icon_small)
-                                win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, h_icon_large)
+                                win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_SMALL, h_icon_small)  # type: ignore
+                                win32gui.SendMessage(hwnd, win32con.WM_SETICON, win32con.ICON_BIG, h_icon_large)  # type: ignore
                                 
                                 # Set class-level icon (affects all windows of this class)
                                 try:
@@ -149,8 +149,8 @@ class TorrentSearchApp:
                                     ctypes.windll.user32.SetClassLongPtrW(hwnd, -34, h_icon_small)   # GCLP_HICONSM
                                 except:
                                     try:
-                                        win32gui.SetClassLong(hwnd, -14, h_icon_large)
-                                        win32gui.SetClassLong(hwnd, -34, h_icon_small)
+                                        win32gui.SetClassLong(hwnd, -14, h_icon_large)  # type: ignore
+                                        win32gui.SetClassLong(hwnd, -34, h_icon_small)  # type: ignore
                                     except:
                                         pass
                                 
@@ -181,13 +181,6 @@ class TorrentSearchApp:
         # Initialize managers
         self.settings_manager = SettingsManager()
 
-        # Ensure 'academictorrents' is enabled if it's missing (Fix for existing users)
-        # This is critical because we just re-added/fixed it
-        current_enabled = self.settings_manager.get_enabled_providers()
-        if 'academictorrents' not in current_enabled:
-            current_enabled.append('academictorrents')
-            self.settings_manager.set_enabled_providers(current_enabled)
-
         self.bookmark_manager = BookmarkManager()
         self.history_manager = SearchHistoryManager()
         self.provider_manager = CustomProviderManager()
@@ -196,6 +189,11 @@ class TorrentSearchApp:
         # Pre-cache Academic Torrents database in background for faster first search
         def precache_academic():
             try:
+                # Only cache if the provider is actually enabled
+                current_enabled = self.settings_manager.get_enabled_providers()
+                if current_enabled and 'academictorrents' not in current_enabled:
+                    return
+                    
                 from providers.additional import AcademicTorrentsProvider
                 from models.category import Category
                 provider = AcademicTorrentsProvider()
@@ -870,7 +868,7 @@ class TorrentSearchApp:
             self.last_focus_time = time.time()
         elif any(x in e_type or x in e_name for x in ["blur", "minimize", "hide"]):
             self.is_window_focused = False
-            self.last_blur_time = time.time()
+            self.last_blur_time = time.time()  # type: ignore
         elif any(x in e_type or x in e_name for x in ["restore"]):
             self.is_window_focused = True
             self.is_window_visible = True
@@ -1070,7 +1068,10 @@ class TorrentSearchApp:
                     # Tell Flet to destroy its window gracefully first if possible
                     if hasattr(self, 'page') and hasattr(self.page, 'window'):
                         try:
-                            self.page.window.destroy()
+                            task = self.page.window.destroy()
+                            if hasattr(task, "__await__") and hasattr(self.page, 'run_task'):
+                                async def _run_destroy(): await task
+                                self.page.run_task(_run_destroy)
                         except:
                             pass
                             
@@ -1119,7 +1120,7 @@ class TorrentSearchApp:
             import traceback
             traceback.print_exc()
         # Persistent SnackBar for notifications
-        self.page.snack_bar = ft.SnackBar(content=ft.Text(""), duration=4000)
+        self.page.snack_bar = ft.SnackBar(content=ft.Text(""), duration=4000)  # type: ignore
 
     def _apply_bg_image(self):
         """Applies the background image to the root container."""
@@ -1160,7 +1161,7 @@ class TorrentSearchApp:
             destinations=[
                 ft.NavigationRailDestination(
                     icon=ft.Icons.SEARCH, 
-                    selected_icon=ft.Icons.SEARCH, 
+                    selected_icon=ft.Icons.SAVED_SEARCH, 
                     label="Search"
                 ),
                 ft.NavigationRailDestination(
@@ -1169,13 +1170,13 @@ class TorrentSearchApp:
                     label="Bookmarks"
                 ),
                 ft.NavigationRailDestination(
-                    icon=ft.Icons.HISTORY, 
-                    selected_icon=ft.Icons.HISTORY, 
+                    icon=ft.Icons.ACCESS_TIME, 
+                    selected_icon=ft.Icons.ACCESS_TIME_FILLED, 
                     label="History"
                 ),
                 ft.NavigationRailDestination(
-                    icon=ft.Icons.DOWNLOAD,
-                    selected_icon=ft.Icons.DOWNLOAD_DONE,
+                    icon=ft.Icons.CLOUD_DOWNLOAD_OUTLINED,
+                    selected_icon=ft.Icons.CLOUD_DOWNLOAD,
                     label="Downloads"
                 ),
                 ft.NavigationRailDestination(
@@ -1194,10 +1195,10 @@ class TorrentSearchApp:
 
         # Navigation Config (Icon, Selected Icon, Label)
         self.nav_configs = [
-            (ft.Icons.SEARCH, ft.Icons.SEARCH, "Search"),
+            (ft.Icons.SEARCH, ft.Icons.SAVED_SEARCH, "Search"),
             (ft.Icons.BOOKMARK_BORDER, ft.Icons.BOOKMARK, "Bookmarks"),
-            (ft.Icons.HISTORY, ft.Icons.HISTORY, "History"),
-            (ft.Icons.DOWNLOAD, ft.Icons.DOWNLOAD_DONE, "Downloads"),
+            (ft.Icons.ACCESS_TIME, ft.Icons.ACCESS_TIME_FILLED, "History"),
+            (ft.Icons.CLOUD_DOWNLOAD_OUTLINED, ft.Icons.CLOUD_DOWNLOAD, "Downloads"),
             (ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, "Settings"),
             (ft.Icons.INFO_OUTLINE, ft.Icons.INFO, "About"),
         ]
@@ -1270,7 +1271,7 @@ class TorrentSearchApp:
     def _update_layout(self):
         debug_log("Inside _update_layout")
         # Define mobile breakpoint
-        is_mobile = self.page.width < 800
+        is_mobile = self.page.width < 800  # type: ignore
         
         # Only update if mode changed or controls are empty
         if is_mobile != self.is_mobile or not hasattr(self, 'root_container'):
@@ -1386,11 +1387,72 @@ class TorrentSearchApp:
             import traceback
             traceback.print_exc()
 
+    def _open_changelog_dialog(self, e):
+        changelog_content = ft.ListView([
+            ft.Text("v2.1.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Added new General providers: Extto, FileMood, MagnetDL, Snowfl, SolidTorrent, Pirateiro, Torrent991, Zamunda.RIP\n• Added new Anime providers: DMHY, Nekobt\n• Added new Games providers: Byrutor, GOG Games, PCGamesTorrent\n• Added new Adult provider: MyPorn.Club\n• Fixed providers: Cpasbien, Kickass Torrents, YTS, Anerina, Skidrow Repack, FTUApps, VSTorrents, Academic Torrents.\n• Fixed fetch metadata UI bug in the Download tab.\n• Completely refreshed File Associations tab UI with polished toggle switches.\n• Improved Provider tab connection check button UI and implemented new filter UI.\n• Moved Proxy settings to the Advanced Settings tab.\n• Resolved settings JSON syntax errors.\n• General UI/UX improvements, including this 'Version History' window.\n• Fixed side bar icon layout issues.\n• Added 'Rate the App' button to the About page.\n", size=13),
+            ft.Text("v2.0.7", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• UI improvements and polish in Settings.\n• Improved background image section UI in the General tab.\n• Fixed background fade slider to show values in percentage.\n• Fixed metadata fetching bugs.\n• Updated Cpasbien provider URL to .cc\n• Added file associations toggles.\n", size=13),
+            ft.Text("v2.0.6", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Implemented advanced speed limits.\n• Added torrent max connections settings.\n", size=13),
+            ft.Text("v2.0.5", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Base framework for new SwiftSeed UI.\n• Migrated to Flet based interface.\n", size=13),
+            ft.Text("v1.9.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• File Association System: Native Windows integration to set SwiftSeed as default for .torrent and magnet links.\n• UI Improvements: New dedicated File Associations settings tab and smart first-run prompt for easy setup.\n• Critical Bug Fixes: Resolved duplicate magnet link behavior and ghost downloads reappearing after restart.\n• Technical Polish: Robust registry handling via HKEY_CURRENT_USER (no admin rights required) and recursive uninstallation cleanup.\n", size=13),
+            ft.Text("v1.8.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• System Tray: App minimizes to tray, keeps downloads running, and provides right-click context menu.\n• Dialogs: File selection dialog auto-closes after saving, and default save location is now 'Downloads'.\n• Updates & Support: Added direct GitHub release link and Ko-fi donation link.\n", size=13),
+            ft.Text("v1.7.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Download Persistence: State and selections are saved immediately to prevent data loss, enabling smart resume and recovery.\n• Portable Build: Bundled all Libtorrent dependencies for a zero-dependency, fully portable deployment.\n• Performance: Optimized Libtorrent connections, disk I/O, and network settings for peak download speeds.\n• UI/UX Enhancements.\n", size=13),
+            ft.Text("v1.5.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Native Libtorrent Engine: Fully transitioned to a standalone downloader with seamless magnet and local .torrent support.\n• State Management: Intelligent download resume and robust persistence on app close.\n• UI Improvements: Advanced file selection dialog, new 'Open Folder' control, and real-time speed/peer updates.\n• Fixes: Resolved magnet fetching bugs, missing file extensions, UI refresh delays, and stability issues.\n", size=13),
+            ft.Text("v1.0.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Initial release of the app.\n", size=13),
+        ], expand=True, padding=ft.Padding(0, 0, 15, 0), spacing=5)
+
+        dialog = ft.AlertDialog(
+            title=ft.Text("Version History"),
+            content=ft.Container(changelog_content, width=600, height=450),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: self._close_dialog(dialog))
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        if hasattr(self.page, "open"):
+            self.page.open(dialog)
+        else:
+            self.page.overlay.append(dialog)
+            dialog.open = True
+            self.page.update()
+
+    def _close_dialog(self, dialog):
+        if hasattr(self.page, "close"):
+            self.page.close(dialog)
+        else:
+            dialog.open = False
+            self.page.update()
+
     def _build_about_view(self):
-        return ft.Column(
+        header = ft.Column([
+            ft.Row(
+                [
+                    ft.Text("About SwiftSeed", size=30, weight=ft.FontWeight.BOLD),
+                    ft.Container(expand=True),
+                    ft.IconButton(
+                        icon=ft.Icons.HISTORY,
+                        icon_size=24,
+                        icon_color=ft.Colors.BLUE_400,
+                        tooltip="App Version History",
+                        on_click=self._open_changelog_dialog
+                    ),
+                    ft.Container(width=15)
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+            ),
+            ft.Divider(),
+        ])
+
+        scrollable_content = ft.Column(
             [
-                ft.Text("About SwiftSeed", size=30, weight=ft.FontWeight.BOLD),
-                ft.Divider(),
                 ft.Container(height=20),
                 ft.Image(
                     src=resource_path(os.path.join("assets", "icon.png")),
@@ -1400,7 +1462,7 @@ class TorrentSearchApp:
                 ),
                 ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
-                ft.Text("Version 2.0.7", size=20, weight=ft.FontWeight.W_500),
+                ft.Text("Version 2.1.0", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
                 ft.Text("Developed by Sayan Dey", size=18),
                 ft.Container(height=10),
@@ -1433,9 +1495,10 @@ class TorrentSearchApp:
                 ft.Row(
                     [
                         ft.ElevatedButton(
-                            "Check Updates", 
-                            icon=ft.Icons.UPDATE, 
-                            on_click=lambda e: webbrowser.open("https://github.com/sayandey021/SwiftSeed/releases")
+                            "Rate the App", 
+                            icon=ft.Icons.STAR, 
+                            on_click=lambda e: webbrowser.open("ms-windows-store://review/?ProductId=9NJVGTJ7151T"),
+                            style=ft.ButtonStyle(color=ft.Colors.AMBER_400)
                         ),
                         ft.ElevatedButton(
                             "Report Bug", 
@@ -1479,6 +1542,8 @@ class TorrentSearchApp:
             scroll=ft.ScrollMode.AUTO
         )
 
+        return ft.Column([header, scrollable_content], expand=True)
+
     # --- SEARCH VIEW ---
     def _build_search_view(self):
         self.search_field = ft.TextField(
@@ -1509,7 +1574,7 @@ class TorrentSearchApp:
             border_radius=10,
             content_padding=ft.Padding(15, 12, 15, 12),
         )
-        self.category_dropdown.on_change = lambda _: self._perform_search(None) if self.search_field.value else None
+        self.category_dropdown.on_change = lambda _: self._perform_search(None) if self.search_field.value else None  # type: ignore
         
         self.search_btn = ft.ElevatedButton(
             "Search",
@@ -1764,7 +1829,7 @@ class TorrentSearchApp:
         
         # Scrollable tabs row - hidden scrollbar for clean look
         self.tabs_row = ft.Row(
-            controls=self.tab_buttons,
+            controls=self.tab_buttons,  # type: ignore
             spacing=0,
             scroll=ft.ScrollMode.HIDDEN,  # Hidden scrollbar, drag and wheel still work
         )
@@ -1779,7 +1844,10 @@ class TorrentSearchApp:
             if self.is_dragging_tabs:
                 # Use delta scrolling - Flet handles bounds naturally
                 try:
-                    self.tabs_row.scroll_to(delta=-e.delta_x, duration=0)
+                    res = self.tabs_row.scroll_to(delta=-e.delta_x, duration=0)  # type: ignore
+                    if hasattr(res, "__await__") and hasattr(self.page, "run_task"):
+                        async def _scroll(): await res
+                        self.page.run_task(_scroll)
                 except Exception:
                     pass
         
@@ -2060,7 +2128,10 @@ class TorrentSearchApp:
         if len(self.tab_buttons) > 0:
             try:
                 approx_position = max(0, (index - 2) * 100)
-                self.tabs_row.scroll_to(offset=approx_position, duration=100)
+                res = self.tabs_row.scroll_to(offset=approx_position, duration=100)
+                if hasattr(res, "__await__") and hasattr(self.page, "run_task"):
+                    async def _scroll(): await res
+                    self.page.run_task(_scroll)
             except (Exception, AssertionError):
                 pass
         
@@ -2117,8 +2188,8 @@ class TorrentSearchApp:
             for i, btn in enumerate(self.tab_buttons):
                 is_selected = (i == self.selected_tab_index)
                 # Update only visual properties
-                btn.content.weight = ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_400
-                btn.content.color = ft.Colors.PRIMARY if is_selected else ft.Colors.GREY_400
+                btn.content.weight = ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_400  # type: ignore
+                btn.content.color = ft.Colors.PRIMARY if is_selected else ft.Colors.GREY_400  # type: ignore
                 btn.bgcolor = ft.Colors.TRANSPARENT
                 btn.border = ft.Border.only(
                     bottom=ft.BorderSide(2, ft.Colors.PRIMARY) if is_selected else ft.BorderSide(0, ft.Colors.TRANSPARENT)
@@ -2149,7 +2220,7 @@ class TorrentSearchApp:
                 )
                 self.tab_buttons.append(btn)
             
-            self.tabs_row.controls = self.tab_buttons
+            self.tabs_row.controls = self.tab_buttons  # type: ignore
         
         # Update nav buttons visibility - only show if there's somewhere to go
         can_go_left = self.selected_tab_index > 0
@@ -2474,9 +2545,9 @@ class TorrentSearchApp:
         for tag in self.sort_tags_row.controls:
             sid = tag.data
             is_selected = (sid == sort_id)
-            tag.bgcolor = ft.Colors.PRIMARY if is_selected else ft.Colors.with_opacity(0.1, ft.Colors.GREY)
-            tag.content.color = ft.Colors.WHITE if is_selected else ft.Colors.GREY_400
-            tag.content.weight = ft.FontWeight.W_600 if is_selected else ft.FontWeight.NORMAL
+            tag.bgcolor = ft.Colors.PRIMARY if is_selected else ft.Colors.with_opacity(0.1, ft.Colors.GREY)  # type: ignore
+            tag.content.color = ft.Colors.WHITE if is_selected else ft.Colors.GREY_400  # type: ignore
+            tag.content.weight = ft.FontWeight.W_600 if is_selected else ft.FontWeight.NORMAL  # type: ignore
             try:
                 tag.update()
             except: pass
@@ -2560,7 +2631,10 @@ class TorrentSearchApp:
         
         # Reset scroll position to show tabs from start
         try:
-            self.tabs_row.scroll_to(offset=0, duration=0)
+            res = self.tabs_row.scroll_to(offset=0, duration=0)
+            if hasattr(res, "__await__") and hasattr(self.page, "run_task"):
+                async def _scroll(): await res
+                self.page.run_task(_scroll)
         except Exception:
             pass
         
@@ -2587,11 +2661,11 @@ class TorrentSearchApp:
             return
 
         category_name = self.category_dropdown.value
-        category = Category.from_string(category_name)
+        category = Category.from_string(category_name)  # type: ignore
         
         if not append:
             self.current_page = 1
-            self.history_manager.add_search(query, category_name)
+            self.history_manager.add_search(query, category_name)  # type: ignore
             self.all_results_list.controls.clear()
             
             # Reset tabs for new search (modern tab bar)
@@ -2605,7 +2679,10 @@ class TorrentSearchApp:
             
             # Reset tabs scroll to start
             try:
-                self.tabs_row.scroll_to(offset=0, duration=0)
+                res = self.tabs_row.scroll_to(offset=0, duration=0)
+                if hasattr(res, "__await__") and hasattr(self.page, "run_task"):
+                    async def _scroll(): await res
+                    self.page.run_task(_scroll)
             except Exception:
                 pass
             
@@ -2912,7 +2989,7 @@ class TorrentSearchApp:
             # Typically load more applies to the query, affecting all. Putting it in "All" is standard.
             max_per_provider = self.settings_manager.get('max_results_per_provider', 50)
             display_limit = self.displayed_count.get("All", max_per_provider)
-            has_more = len(self.current_results) > display_limit
+            has_more = len(self.current_results) > display_limit  # type: ignore
             
             if self.load_more_btn.visible and not has_more:
                 # Add a container for button to center it
@@ -3041,10 +3118,26 @@ class TorrentSearchApp:
         ]
         
         if language:
+            language_colors = {
+                "Multi": ft.Colors.BROWN_800,
+                "English": ft.Colors.DEEP_PURPLE_700,
+                "Portuguese": ft.Colors.LIGHT_GREEN_800,
+                "Japanese": ft.Colors.DEEP_ORANGE_800,
+                "Spanish": ft.Colors.LIME_900,
+                "French": ft.Colors.INDIGO_600,
+                "Russian": ft.Colors.YELLOW_900,
+                "Chinese": ft.Colors.ORANGE_800,
+                "Bulgarian": ft.Colors.BROWN_500,
+                "German": ft.Colors.RED_500,
+                "Italian": ft.Colors.LIGHT_GREEN_600,
+                "Hindi": ft.Colors.DEEP_PURPLE_400,
+                "Korean": ft.Colors.DEEP_ORANGE_500,
+            }
+            lang_bg_color = language_colors.get(language, ft.Colors.BROWN_900)
             tags.append(
                 ft.Container(
                     content=ft.Text(language, size=10, color=ft.Colors.WHITE),
-                    bgcolor=ft.Colors.INDIGO,
+                    bgcolor=lang_bg_color,
                     padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                     border_radius=4
                 )
@@ -3081,7 +3174,7 @@ class TorrentSearchApp:
                     on_click=lambda _, t=torrent: self._start_download(t),
                     style=ft.ButtonStyle(
                         color=ft.Colors.WHITE,
-                        bgcolor={"": ft.Colors.TRANSPARENT},
+                        bgcolor={"": ft.Colors.TRANSPARENT},  # type: ignore
                         shape=ft.RoundedRectangleBorder(radius=8),
                         elevation=0,
                     ),
@@ -3111,7 +3204,7 @@ class TorrentSearchApp:
                         title=ft.Text(torrent.name, weight=ft.FontWeight.BOLD, tooltip=torrent.name),
                         subtitle=ft.Column([
                             ft.Text(f"{torrent.size} • {('N/A' if torrent.seeders == -1 else torrent.seeders)} Seeds • {('N/A' if torrent.peers == -1 else torrent.peers)} Peers • {torrent.provider_name}"),
-                            ft.Row(tags, spacing=5)
+                            ft.Row(tags, spacing=5)  # type: ignore
                         ], spacing=2),
                         trailing=ft.IconButton(
                             icon=bookmark_icon,
@@ -3419,7 +3512,7 @@ class TorrentSearchApp:
         # Limit items to display
         display_limit = self.displayed_count.get(provider_name, max_per_provider)
         limited_items = items[:display_limit]
-        has_more = len(items) > display_limit
+        has_more = len(items) > display_limit  # type: ignore
         
         # Set list properties based on style
         if self.current_view_style == 'table':
@@ -3439,7 +3532,7 @@ class TorrentSearchApp:
         
         # Add "Show More" button if there are more results to show
         if has_more:
-            remaining = len(items) - display_limit
+            remaining = len(items) - display_limit  # type: ignore
             show_more_btn = ft.TextButton(
                 f"Show {min(remaining, max_per_provider)} more results ({remaining} remaining)",
                 icon=ft.Icons.EXPAND_MORE,
@@ -3673,13 +3766,13 @@ class TorrentSearchApp:
         # (Already handled by background_add_and_poll starting with a dialog)
         
         # Create a mutable container for the download object
-        download_container = {'download': None, 'error': None}
+        download_container = {'download': None, 'error': None, 'is_duplicate': False}
         
         def cancel_loading(e=None):
             loading_dlg.open = False
             self.page.update()
-            # Remove the download if it was created
-            if download_container['download']:
+            # Only remove the download if it was newly created (not a duplicate)
+            if download_container['download'] and not download_container['is_duplicate']:
                 self.download_manager.remove_download(download_container['download'].id, delete_files=True)
 
         # Show loading dialog IMMEDIATELY
@@ -3702,20 +3795,9 @@ class TorrentSearchApp:
         
         def background_add_and_poll():
             try:
-                # 1. Fetch missing magnet link in background
-                magnet = self._ensure_magnet(torrent)
-                print(f"DEBUG background_add_and_poll: magnet fetched={bool(magnet)}")
-                
-                if not magnet:
-                    loading_dlg.open = False
-                    self.page.update()
-                    # Error handled by checking final_uri below
-                
-                # Determine if this is a torrent file URL or magnet link
-                is_torrent_file_url = bool(magnet and (magnet.startswith('http://') or magnet.startswith('https://')))
-                
-                # Resolve download via provider if needed (e.g. E-Hentai, Skidrow)
+                # 1. Resolve download via provider first
                 resolution_error = None
+                magnet = torrent.get_magnet_uri()
                 
                 if hasattr(self, 'providers'):
                     provider_id = getattr(torrent, 'provider_id', None)
@@ -3723,20 +3805,30 @@ class TorrentSearchApp:
                     if provider:
                         try:
                             resolved = provider.resolve_download(torrent)
-                            if resolved and resolved != torrent.magnet_uri:
-                                import os
+                            if not loading_dlg.open: return
+                            if resolved and resolved != magnet:
                                 print(f"DEBUG: Provider resolved: {resolved}")
                                 if os.path.exists(resolved):
                                     torrent.file_path = resolved
                                 elif resolved.startswith('magnet:') or resolved.startswith('http'):
                                     torrent.magnet_uri = resolved
+                                    magnet = resolved
                                 else:
                                     resolution_error = "Provider returned invalid download link"
-                            elif not resolved and not torrent.magnet_uri:
+                            elif not resolved and not magnet:
                                 resolution_error = "No download link found on source page"
                         except Exception as ex:
                             print(f"Provider resolution failed: {ex}")
                             resolution_error = f"Failed to fetch download link: {str(ex)[:50]}"
+                            
+                # 2. If provider didn't find anything, fallback to generic _ensure_magnet
+                if not getattr(torrent, 'file_path', None) and not torrent.magnet_uri:
+                    magnet = self._ensure_magnet(torrent)
+                    print(f"DEBUG background_add_and_poll: fallback magnet fetched={bool(magnet)}")
+                    if not loading_dlg.open: return
+
+                # Determine if this is a torrent file URL or magnet link
+                is_torrent_file_url = bool(magnet and (magnet.startswith('http://') or magnet.startswith('https://')))
                 
                 # Check if we have a valid URI after resolution
                 final_uri = getattr(torrent, 'file_path', None) or torrent.magnet_uri
@@ -3843,6 +3935,7 @@ class TorrentSearchApp:
                 
                 # Check if it's a duplicate
                 if not getattr(download, 'is_newly_added', True):
+                    download_container['is_duplicate'] = True
                     loading_dlg.open = False
                     self.page.update()
                     self._show_snack("ℹ️ Torrent already exists in downloads")
@@ -3861,7 +3954,7 @@ class TorrentSearchApp:
                 
                 # Update dialog text
                 try:
-                    loading_dlg.content.controls[1].value = "Processing file list..."
+                    loading_dlg.content.controls[1].value = "Processing file list..."  # type: ignore
                     self.page.update()
                 except:
                     pass
@@ -3895,7 +3988,7 @@ class TorrentSearchApp:
                             loading_dlg.open = False
                             self.page.update()
                             self._show_snack("❌ Download handle became invalid. Please try again.")
-                            if download_container['download']:
+                            if download_container['download'] and not download_container['is_duplicate']:
                                 self.download_manager.remove_download(download_container['download'].id, delete_files=True)
                             return
                         if download.handle.status().has_metadata:
@@ -3931,7 +4024,8 @@ class TorrentSearchApp:
                     if len(download.files) == 0:
                         loading_dlg.open = False
                         self.page.update()
-                        self.download_manager.remove_download(download.id)
+                        if not download_container['is_duplicate']:
+                            self.download_manager.remove_download(download.id)
                         self._show_snack("Failed to retrieve file list. The torrent metadata may be corrupted.")
                         return
 
@@ -3949,7 +4043,7 @@ class TorrentSearchApp:
                         })
                     
                     # Update torrent object info
-                    download.size = self.download_manager.format_size(download.total_size)
+                    download.size = self.download_manager.format_size(download.total_size)  # type: ignore
                     if download.handle.is_valid() and download.handle.status().has_metadata:
                         download.name = download.handle.torrent_file().name()
                     
@@ -3979,9 +4073,8 @@ class TorrentSearchApp:
                         self._on_nav_change(MockEvent(self.rail))
 
                     def on_cancel(e):
-                        # Only remove if it's not visible (meaning it was just added and not confirmed yet)
-                        # If it's visible, it means it was already in the list (duplicate add attempt)
-                        if not download.visible:
+                        # Only remove if it's a new download (not a duplicate) and not yet confirmed
+                        if not download.visible and getattr(download, 'is_newly_added', True) and not getattr(download, 'is_duplicate', False):
                             self.download_manager.remove_download(download.id, delete_files=True)
                         download_dlg.open = False
                         self.page.update()
@@ -4006,7 +4099,7 @@ class TorrentSearchApp:
                     def on_cancel_retry(e):
                         retry_dlg.open = False
                         self.page.update()
-                        if download_container['download']:
+                        if download_container['download'] and not download_container['is_duplicate']:
                             self.download_manager.remove_download(download_container['download'].id, delete_files=True)
                         self._show_snack("Download cancelled")
                     
@@ -4097,11 +4190,11 @@ class TorrentSearchApp:
         # 1. Modern Page.clipboard.set (Flet 0.8+, returns coroutine)
         try:
             if hasattr(self.page, "clipboard"):
-                res = self.page.clipboard.set(data)
+                res = self.page.clipboard.set(data)  # type: ignore
                 import inspect
                 if inspect.iscoroutine(res):
                     try:
-                        self.page.run_task(res)
+                        self.page.run_task(res)  # type: ignore
                     except:
                         # Fallback for older asyncio handle
                         import asyncio
@@ -4113,10 +4206,10 @@ class TorrentSearchApp:
 
         # 2. Legacy Page.set_clipboard
         try:
-            res = self.page.set_clipboard(data)
+            res = self.page.set_clipboard(data)  # type: ignore
             import inspect
             if inspect.iscoroutine(res):
-                self.page.run_task(res)
+                self.page.run_task(res)  # type: ignore
             return True
         except Exception as e:
             print(f"Legacy set_clipboard failed: {e}")
@@ -4223,7 +4316,7 @@ class TorrentSearchApp:
             
             # Parse torrent file using libtorrent
             import libtorrent as lt
-            ti = lt.torrent_info(file_path)
+            ti = lt.torrent_info(file_path)  # type: ignore
             
             files = []
             for i in range(ti.num_files()):
@@ -4628,7 +4721,7 @@ class TorrentSearchApp:
         """Copy magnet link from bookmark"""
         magnet = bookmark.get('magnet_uri')
         if magnet:
-            self.page.clipboard.set(magnet)
+            self.page.clipboard.set(magnet)  # type: ignore
             self._show_snack("Magnet link copied!")
         else:
             self._show_snack("No magnet link available")
@@ -4659,7 +4752,7 @@ class TorrentSearchApp:
                         # Find the star icon button in the card and update it
                         # Card -> Container -> Column -> ListTile -> trailing (IconButton)
                         try:
-                            container = control.content
+                            container = control.content  # type: ignore
                             column = container.content
                             list_tile = column.controls[0]
                             # ... (rest of search logic logic needs to be robust for different view types)
@@ -4972,8 +5065,7 @@ class TorrentSearchApp:
             expand=True,
             scroll=ft.ScrollMode.AUTO,
             tight=True,
-            spacing=3,
-            padding=5
+            spacing=3
         )
     
     def _refresh_custom_providers(self):
@@ -5053,7 +5145,7 @@ def main(page: ft.Page):
                 CoInitialize()
                 try:
                     # Clear recent items and custom categories from jump list
-                    dest_list = CreateObject("{77f10cf0-3db5-4966-b520-b7c54fd35ed6}", interface="{92CA9DCD-5622-4bba-A805-5E9F541BD8C9}")
+                    dest_list = CreateObject("{77f10cf0-3db5-4966-b520-b7c54fd35ed6}", interface="{92CA9DCD-5622-4bba-A805-5E9F541BD8C9}")  # type: ignore
                     dest_list.DeleteList(None)  # Clear all jump list items
                     print("Jump list cleared")
                 except Exception as e:
@@ -5113,14 +5205,14 @@ def instance_message_handler(message):
             print(f"Opening torrent from another instance: {file_path}")
             
             # Bring window to front
-            _app_instance.page.window.visible = True
-            _app_instance.page.window.skip_task_bar = False
-            _app_instance.page.window.minimized = False
-            _app_instance.is_window_visible = True
+            _app_instance.page.window.visible = True  # type: ignore
+            _app_instance.page.window.skip_task_bar = False  # type: ignore
+            _app_instance.page.window.minimized = False  # type: ignore
+            _app_instance.is_window_visible = True  # type: ignore
             _app_instance.page.update()
             
             # Navigate to downloads tab
-            _app_instance.rail.selected_index = 3
+            _app_instance.rail.selected_index = 3  # type: ignore
             _app_instance._set_nav_index(3)
             
             # Open the torrent file
@@ -5133,14 +5225,14 @@ def instance_message_handler(message):
             print(f"Opening magnet from another instance: {magnet_link[:80]}...")
             
             # Bring window to front
-            _app_instance.page.window.visible = True
-            _app_instance.page.window.skip_task_bar = False
-            _app_instance.page.window.minimized = False
-            _app_instance.is_window_visible = True
+            _app_instance.page.window.visible = True  # type: ignore
+            _app_instance.page.window.skip_task_bar = False  # type: ignore
+            _app_instance.page.window.minimized = False  # type: ignore
+            _app_instance.is_window_visible = True  # type: ignore
             _app_instance.page.update()
             
             # Navigate to downloads tab
-            _app_instance.rail.selected_index = 3
+            _app_instance.rail.selected_index = 3  # type: ignore
             _app_instance._set_nav_index(3)
             
             # Open the magnet link
@@ -5149,10 +5241,10 @@ def instance_message_handler(message):
     elif action == 'show_window':
         # Another instance just wants to show the window
         print("Bringing window to front (requested by another instance)")
-        _app_instance.page.window.visible = True
-        _app_instance.page.window.skip_task_bar = False
-        _app_instance.page.window.minimized = False
-        _app_instance.is_window_visible = True
+        _app_instance.page.window.visible = True  # type: ignore
+        _app_instance.page.window.skip_task_bar = False  # type: ignore
+        _app_instance.page.window.minimized = False  # type: ignore
+        _app_instance.is_window_visible = True  # type: ignore
         _app_instance.page.update()
 
 
@@ -5266,7 +5358,7 @@ if __name__ == "__main__":
     print("Calling ft.app()...")
     sys.stdout.flush()
     try:
-        ft.app(
+        ft.app(  # type: ignore
             target=main, 
             assets_dir=resource_path("assets"),
             name="SwiftSeed",
@@ -5276,6 +5368,6 @@ if __name__ == "__main__":
         # Release lock when app exits
         try:
             if 'instance_manager' in locals():
-                instance_manager.release()
+                instance_manager.release()  # type: ignore
         except:
             pass

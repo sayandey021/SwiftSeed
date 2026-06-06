@@ -1,6 +1,8 @@
 import flet as ft
 import os
 import sys
+import traceback
+import tempfile
 import webbrowser
 from pathlib import Path
 
@@ -53,8 +55,8 @@ class SettingsView(ft.Container):
                         ft.Tab(label="Download Settings", icon=ft.Icons.DOWNLOAD),
                         ft.Tab(label="Search Settings", icon=ft.Icons.SEARCH),
                         ft.Tab(label="Providers", icon=ft.Icons.CLOUD),
-                        ft.Tab(label="Proxy", icon=ft.Icons.VPN_KEY),
                         ft.Tab(label="File Associations", icon=ft.Icons.LINK),
+                        ft.Tab(label="Advance Settings", icon=ft.Icons.TUNE),
                     ]
                 ),
                 ft.TabBarView(
@@ -63,8 +65,8 @@ class SettingsView(ft.Container):
                         self._build_download_settings(),
                         self._build_search_settings(),
                         self.provider_content_container,
-                        self._build_proxy_settings(),
-                        self._build_file_associations_settings()
+                        self._build_file_associations_settings(),
+                        self._build_proxy_settings()
                     ],
                     expand=True
                 )
@@ -89,6 +91,7 @@ class SettingsView(ft.Container):
             content = self._build_provider_settings()
             self.provider_content_container.content = content
             self.provider_content_container.alignment = None
+            self.provider_content_container.padding = 0
             self._providers_built = True
             
             # Use update only if attached to page
@@ -96,6 +99,7 @@ class SettingsView(ft.Container):
                 self.provider_content_container.update()
         except Exception as e:
             print(f"Error building provider settings: {e}")
+            traceback.print_exc()
     
     def _check_startup_status(self):
         """Check if app is set to run on startup"""
@@ -714,7 +718,7 @@ class SettingsView(ft.Container):
         # Reset to defaults
         def reset_folders(e):
             default_download = os.path.join(os.path.expanduser("~"), "Downloads", "SwiftSeed Download")
-            default_temp = os.path.join(default_download, "temp")
+            default_temp = os.path.join(tempfile.gettempdir(), "SwiftSeed Download")
             
             download_folder_field.value = default_download
             temp_folder_field.value = default_temp
@@ -891,7 +895,8 @@ class SettingsView(ft.Container):
                 ft.ElevatedButton(
                     "Reset to Defaults",
                     icon=ft.Icons.RESTORE,
-                    on_click=reset_folders
+                    on_click=reset_folders,
+                    color=ft.Colors.RED
                 ),
                 
                 ft.Divider(height=30),
@@ -921,9 +926,6 @@ class SettingsView(ft.Container):
                 ),
                 
                 ft.Container(height=10),
-                ft.Text("💡 Tip: Use toggles to quickly enable/disable limits without changing values", 
-                       size=11, color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400, 
-                       italic=True),
                        
                 ft.Divider(height=30),
                 
@@ -940,9 +942,6 @@ class SettingsView(ft.Container):
                 ], spacing=15),
                 
                 ft.Container(height=10),
-                ft.Text("💡 These settings control how many connections and active torrents are allowed", 
-                       size=11, color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400, 
-                       italic=True),
                 
                 ft.ElevatedButton(
                     "Apply Advanced Settings",
@@ -1022,7 +1021,7 @@ class SettingsView(ft.Container):
             self.settings_manager.set('default_sort', mapping[e.control.value])
             self._show_snack(f"Default sort set to: {e.control.value}")
         
-        sort_dropdown.on_change = on_sort_change
+        sort_dropdown.on_select = on_sort_change
         
         # Auto-clear history
         auto_clear = self.settings_manager.get('auto_clear_history_days', 0)
@@ -1042,7 +1041,7 @@ class SettingsView(ft.Container):
             self.settings_manager.set('auto_clear_history_days', int(e.control.value))
             self._show_snack("History auto-clear setting updated")
         
-        auto_clear_field.on_change = on_auto_clear_change
+        auto_clear_field.on_select = on_auto_clear_change
         
         return ft.Container(
             content=ft.ListView([
@@ -1094,9 +1093,19 @@ class SettingsView(ft.Container):
         # Status indicators for each provider
         status_indicators = {}
         
-        def check_provider_status(provider_url, status_icon, provider_name):
+        def check_provider_status(provider_url, status_container, provider_name, page):
             """Check if provider is accessible"""
-            import threading
+            
+            # Show spinning progress ring immediately
+            status_container.content = ft.ProgressRing(
+                width=18, height=18, stroke_width=2,
+                color=ft.Colors.GREY,
+            )
+            status_container.tooltip = "Checking..."
+            try:
+                page.update()
+            except:
+                pass
             
             def check():
                 try:
@@ -1108,25 +1117,28 @@ class SettingsView(ft.Container):
                     response = requests.get(provider_url, headers=headers, timeout=10, verify=False)
                     
                     if response.status_code == 200:
-                        status_icon.name = ft.Icons.CHECK_CIRCLE
-                        status_icon.color = ft.Colors.GREEN
-                        status_icon.tooltip = "Working"
+                        status_container.content = ft.Icon(
+                            ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN, size=18
+                        )
+                        status_container.tooltip = "Working"
                     else:
-                        status_icon.name = ft.Icons.ERROR
-                        status_icon.color = ft.Colors.ORANGE
-                        status_icon.tooltip = f"Error: {response.status_code}"
+                        status_container.content = ft.Icon(
+                            ft.Icons.ERROR, color=ft.Colors.ORANGE, size=18
+                        )
+                        status_container.tooltip = f"Error: {response.status_code}"
                 except Exception as e:
-                    status_icon.name = ft.Icons.CANCEL
-                    status_icon.color = ft.Colors.RED
-                    status_icon.tooltip = "Blocked/Timeout"
+                    status_container.content = ft.Icon(
+                        ft.Icons.CANCEL, color=ft.Colors.RED, size=18
+                    )
+                    status_container.tooltip = "Blocked/Timeout"
                 
                 try:
-                    status_icon.update()
-                except:
-                    pass
+                    page.update()
+                except Exception as e:
+                    print(f"Error updating status: {e}")
             
-            thread = threading.Thread(target=check, daemon=True)
-            thread.start()
+            # Use page.run_thread so Flet's event loop handles UI updates from this thread
+            page.run_thread(check)
         
         def get_provider_category(provider):
             """Get category text for a provider"""
@@ -1174,14 +1186,20 @@ class SettingsView(ft.Container):
             # Language badge
             language_text = getattr(provider.info, 'language', 'Multi')
             language_color = {
-                "Multi": ft.Colors.BLUE_GREY_700,
-                "English": ft.Colors.INDIGO_700,
-                "Portuguese": ft.Colors.GREEN_800,
-                "Japanese": ft.Colors.RED_800,
-                "Spanish": ft.Colors.ORANGE_800,
-                "French": ft.Colors.BLUE_800,
-                "Russian": ft.Colors.RED_700,
-            }.get(language_text, ft.Colors.BLUE_GREY_700)
+                "Multi": ft.Colors.BROWN_800,
+                "English": ft.Colors.DEEP_PURPLE_700,
+                "Portuguese": ft.Colors.LIGHT_GREEN_800,
+                "Japanese": ft.Colors.DEEP_ORANGE_800,
+                "Spanish": ft.Colors.LIME_900,
+                "French": ft.Colors.INDIGO_600,
+                "Russian": ft.Colors.YELLOW_900,
+                "Chinese": ft.Colors.ORANGE_800,
+                "Bulgarian": ft.Colors.BROWN_500,
+                "German": ft.Colors.RED_500,
+                "Italian": ft.Colors.LIGHT_GREEN_600,
+                "Hindi": ft.Colors.DEEP_PURPLE_400,
+                "Korean": ft.Colors.DEEP_ORANGE_500,
+            }.get(language_text, ft.Colors.BROWN_900)
             
             # Safety badge
             is_safe = provider.info.safety_status.value == "safe"
@@ -1189,19 +1207,24 @@ class SettingsView(ft.Container):
             safety_color = ft.Colors.GREEN if is_safe else ft.Colors.ORANGE
             safety_tooltip = "Safe to use" if is_safe else f"{provider.info.safety_reason or 'Use with caution'}"
             
-            # Status indicator icon
-            status_icon = ft.Icon(ft.Icons.HELP_OUTLINE, color=ft.Colors.GREY, size=18, tooltip="Click Check to test")
-            status_indicators[provider.info.id] = status_icon
+            # Status indicator - a container that swaps between ProgressRing and Icon
+            status_container = ft.Container(
+                content=ft.Icon(ft.Icons.HELP_OUTLINE, color=ft.Colors.GREY, size=18),
+                tooltip="Click Check to test",
+                width=18,
+                height=18,
+            )
+            status_indicators[provider.info.id] = status_container
             
             # Check button
-            def create_check_handler(url, icon, name):
-                return lambda e: check_provider_status(url, icon, name)
+            def create_check_handler(url, container, name):
+                return lambda e: check_provider_status(url, container, name, e.page)
             
             check_btn = ft.IconButton(
                 icon=ft.Icons.NETWORK_CHECK,
                 tooltip="Check if working",
                 icon_size=18,
-                on_click=create_check_handler(provider.info.url, status_icon, provider.info.name)
+                on_click=create_check_handler(provider.info.url, status_container, provider.info.name)
             )
             
             return ft.Container(
@@ -1227,11 +1250,12 @@ class SettingsView(ft.Container):
                         border_radius=5,
                     ),
                     ft.Icon(safety_icon, color=safety_color, size=18, tooltip=safety_tooltip),
-                    status_icon,
+                    status_container,
                     check_btn,
-                    ft.Text(provider.info.url, size=10, color=ft.Colors.GREY_500, expand=True, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(provider.info.url, size=10, color=ft.Colors.GREY_500, expand=True, text_align=ft.TextAlign.RIGHT, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS),
                 ], alignment=ft.MainAxisAlignment.START, spacing=8),
                 padding=10,
+                margin=ft.Margin.only(right=15),
                 border=ft.Border.all(1, ft.Colors.GREY_800),
                 border_radius=8,
             )
@@ -1240,8 +1264,26 @@ class SettingsView(ft.Container):
             """Update the provider list based on filters"""
             provider_container.controls.clear()
             
-            # Sort providers by category
-            sorted_providers = sorted(self.providers, key=lambda p: (get_category_order(get_provider_category(p)), p.info.name.lower()))
+            def get_sort_key(p):
+                p_cat = get_provider_category(p)
+                p_lang = getattr(p.info, 'language', 'Multi')
+                
+                cat_score = 0
+                if category_filter != "All":
+                    if category_filter == "Series":
+                        cat_score = 0 if p_cat in ["Series", "TV"] else 1
+                    elif category_filter == "Other":
+                        cat_score = 0 if p_cat == "Other" else 1
+                    else:
+                        cat_score = 0 if p_cat == category_filter else 1
+                        
+                lang_score = 0
+                if language_filter != "All":
+                    lang_score = 0 if p_lang == language_filter else 1
+                    
+                return (cat_score, lang_score, get_category_order(p_cat), p.info.name.lower())
+                
+            sorted_providers = sorted(self.providers, key=get_sort_key)
             
             current_category_header = None
             
@@ -1256,15 +1298,15 @@ class SettingsView(ft.Container):
                 
                 # Apply category filter
                 if category_filter != "All":
-                    if category_filter == "Series" and provider_category not in ["Series", "TV"]:
+                    if category_filter == "Series" and provider_category not in ["Series", "TV", "All"]:
                         continue
-                    elif category_filter == "Other" and provider_category != "Other":
+                    elif category_filter == "Other" and provider_category not in ["Other", "All"]:
                         continue
-                    elif category_filter not in ["Series", "Other"] and provider_category != category_filter:
+                    elif category_filter not in ["Series", "Other"] and provider_category not in [category_filter, "All"]:
                         continue
                 
-                # Apply language filter (Multi providers always show)
-                if language_filter != "All" and provider_language != language_filter and provider_language != "Multi":
+                # Apply language filter
+                if language_filter != "All" and provider_language not in [language_filter, "Multi"]:
                     continue
                 
                 # Add category header if new category
@@ -1308,8 +1350,10 @@ class SettingsView(ft.Container):
             
             try:
                 provider_container.update()
-            except:
-                pass
+                self._page.update()
+                self._show_snack(f"Filter applied: {len(provider_container.controls)} results")
+            except Exception as e:
+                print(f"Update error: {e}")
         
         # Search field
         search_field = ft.TextField(
@@ -1342,7 +1386,7 @@ class SettingsView(ft.Container):
             current_category = e.control.value
             update_provider_list(current_search, current_category, current_language)
         
-        category_dropdown.on_change = on_category_change
+        category_dropdown.on_select = on_category_change
         
         # Language filter dropdown
         language_dropdown = ft.Dropdown(
@@ -1358,8 +1402,54 @@ class SettingsView(ft.Container):
             current_language = e.control.value
             update_provider_list(current_search, current_category, current_language)
         
-        language_dropdown.on_change = on_language_change
+        language_dropdown.on_select = on_language_change
         
+        def toggle_filters(e):
+            advanced_filters.visible = not advanced_filters.visible
+            filter_btn.icon = ft.Icons.FILTER_LIST_OFF if advanced_filters.visible else ft.Icons.FILTER_LIST
+            filter_btn.text = "Hide Filters" if advanced_filters.visible else "Filters"
+            advanced_filters.update()
+            filter_btn.update()
+
+        def reset_filters(e):
+            nonlocal current_search, current_category, current_language
+            current_search = ""
+            current_category = "All"
+            current_language = "All"
+            
+            search_field.value = ""
+            category_dropdown.value = "All"
+            language_dropdown.value = "All"
+            
+            search_field.update()
+            category_dropdown.update()
+            language_dropdown.update()
+            
+            update_provider_list(current_search, current_category, current_language)
+
+        filter_btn = ft.ElevatedButton(
+            "Filters",
+            icon=ft.Icons.FILTER_LIST,
+            on_click=toggle_filters,
+            height=45
+        )
+
+        advanced_filters = ft.Container(
+            content=ft.Row([
+                category_dropdown,
+                language_dropdown,
+                ft.TextButton(
+                    "Reset Filters", 
+                    icon=ft.Icons.REPLAY, 
+                    on_click=reset_filters, 
+                    height=45,
+                    style=ft.ButtonStyle(color=ft.Colors.RED)
+                ),
+            ], spacing=15),
+            visible=False,
+            margin=ft.Margin.only(top=5, bottom=5)
+        )
+
         # Initial population
         update_provider_list()
         
@@ -1420,9 +1510,9 @@ class SettingsView(ft.Container):
                 # Filter controls row
                 ft.Row([
                     search_field,
-                    category_dropdown,
-                    language_dropdown,
+                    filter_btn,
                 ], spacing=15),
+                advanced_filters,
                 
                 ft.Container(height=10),
                 ft.Text(f"Total: {len(self.providers)} providers", size=11, color=ft.Colors.GREY_500),
@@ -1435,10 +1525,13 @@ class SettingsView(ft.Container):
                 
                 ft.Row([
                     ft.Text("Custom Providers (Torznab)", size=20, weight=ft.FontWeight.BOLD),
-                    ft.ElevatedButton(
-                        "Add Provider",
-                        icon=ft.Icons.ADD,
-                        on_click=show_add_provider_dialog
+                    ft.Container(
+                        content=ft.ElevatedButton(
+                            "Add Provider",
+                            icon=ft.Icons.ADD,
+                            on_click=show_add_provider_dialog
+                        ),
+                        margin=ft.Margin.only(right=15)
                     )
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Text("Add Jackett, Prowlarr, or other Torznab-compatible indexers", 
@@ -1535,21 +1628,6 @@ class SettingsView(ft.Container):
         
         # Status indicator
         status_text = ft.Text("", size=12)
-        
-        def on_proxy_toggle(e):
-            enabled = e.control.value
-            # Enable/disable all fields
-            proxy_type_dropdown.disabled = not enabled
-            proxy_host_field.disabled = not enabled
-            proxy_port_field.disabled = not enabled
-            proxy_username_field.disabled = not enabled
-            proxy_password_field.disabled = not enabled
-            
-            self.settings_manager.set('proxy_enabled', enabled)
-            self._show_snack(f"Proxy {'enabled' if enabled else 'disabled'}")
-            self._page.update()
-        
-        proxy_switch.on_change = on_proxy_toggle
         
         def save_proxy_settings(e):
             # Validate inputs
@@ -1681,6 +1759,9 @@ class SettingsView(ft.Container):
             proxy_port_field.disabled = True
             proxy_username_field.disabled = True
             proxy_password_field.disabled = True
+            save_btn.disabled = True
+            test_btn.disabled = True
+            clear_btn.disabled = True
             
             # Clear saved settings
             self.settings_manager.set('proxy_enabled', False)
@@ -1693,6 +1774,61 @@ class SettingsView(ft.Container):
             status_text.value = ""
             self._show_snack("Proxy settings cleared")
             self._page.update()
+
+        save_btn = ft.ElevatedButton(
+            "Save Settings",
+            icon=ft.Icons.SAVE,
+            on_click=save_proxy_settings,
+            style=ft.ButtonStyle(
+                bgcolor={
+                    ft.ControlState.DEFAULT: ft.Colors.GREEN_700,
+                    ft.ControlState.DISABLED: ft.Colors.GREY_800 if self._page.theme_mode == ft.ThemeMode.DARK else ft.Colors.GREY_300,
+                },
+                color={
+                    ft.ControlState.DEFAULT: ft.Colors.WHITE,
+                    ft.ControlState.DISABLED: ft.Colors.GREY_500,
+                },
+            ),
+            disabled=not proxy_enabled,
+        )
+        
+        test_btn = ft.ElevatedButton(
+            "Test Connection",
+            icon=ft.Icons.NETWORK_CHECK,
+            on_click=test_proxy,
+            disabled=not proxy_enabled,
+        )
+        
+        clear_btn = ft.OutlinedButton(
+            "Clear All",
+            icon=ft.Icons.CLEAR,
+            on_click=clear_proxy_settings,
+            style=ft.ButtonStyle(
+                color={
+                    ft.ControlState.DEFAULT: ft.Colors.RED,
+                    ft.ControlState.DISABLED: ft.Colors.GREY_500,
+                }
+            ),
+            disabled=not proxy_enabled,
+        )
+
+        def on_proxy_toggle(e):
+            enabled = e.control.value
+            # Enable/disable all fields
+            proxy_type_dropdown.disabled = not enabled
+            proxy_host_field.disabled = not enabled
+            proxy_port_field.disabled = not enabled
+            proxy_username_field.disabled = not enabled
+            proxy_password_field.disabled = not enabled
+            save_btn.disabled = not enabled
+            test_btn.disabled = not enabled
+            clear_btn.disabled = not enabled
+            
+            self.settings_manager.set('proxy_enabled', enabled)
+            self._show_snack(f"Proxy {'enabled' if enabled else 'disabled'}")
+            self._page.update()
+        
+        proxy_switch.on_change = on_proxy_toggle
         
         return ft.Container(
             content=ft.ListView([
@@ -1702,23 +1838,7 @@ class SettingsView(ft.Container):
                 
                 ft.Container(height=15),
                 
-                # Info banner
-                ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE, size=20),
-                        ft.Text(
-                            "Use a proxy to access torrent sites that may be blocked in your region.",
-                            size=12,
-                            color=ft.Colors.BLUE_200,
-                            expand=True,
-                        ),
-                    ], spacing=10),
-                    padding=15,
-                    bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.BLUE),
-                    border_radius=8,
-                ),
-                
-                ft.Container(height=20),
+
                 
                 # Enable switch
                 ft.Row([
@@ -1760,25 +1880,9 @@ class SettingsView(ft.Container):
                 
                 # Action buttons
                 ft.Row([
-                    ft.ElevatedButton(
-                        "Save Settings",
-                        icon=ft.Icons.SAVE,
-                        on_click=save_proxy_settings,
-                        style=ft.ButtonStyle(
-                            bgcolor=ft.Colors.GREEN_700,
-                            color=ft.Colors.WHITE,
-                        ),
-                    ),
-                    ft.ElevatedButton(
-                        "Test Connection",
-                        icon=ft.Icons.NETWORK_CHECK,
-                        on_click=test_proxy,
-                    ),
-                    ft.OutlinedButton(
-                        "Clear All",
-                        icon=ft.Icons.CLEAR,
-                        on_click=clear_proxy_settings,
-                    ),
+                    save_btn,
+                    test_btn,
+                    clear_btn,
                 ], spacing=15),
                 
                 ft.Container(height=15),
@@ -1838,48 +1942,100 @@ class SettingsView(ft.Container):
     
     def _build_file_associations_settings(self):
         """File associations settings tab"""
-        from managers.file_association_manager import FileAssociationManager
+        from managers.file_association_manager import FileAssociationManager  # type: ignore
         
         file_manager = FileAssociationManager()
         
         # Status text controls
-        status_text = ft.Text("Checking association status...", size=14)
-        torrent_status = ft.Text("", size=13)
-        magnet_status = ft.Text("", size=13)
+        status_icon = ft.Icon(ft.Icons.HELP_OUTLINE, size=24)
+        status_text = ft.Text("Checking association status...", size=16, weight=ft.FontWeight.BOLD)
+        torrent_status = ft.Text("Checking...", size=13)
+        magnet_status = ft.Text("Checking...", size=13)
+        
+        torrent_switch = ft.Switch(
+            label=".torrent Files",
+            value=False,
+            disabled=not file_manager.is_running_as_executable()
+        )
+        
+        magnet_switch = ft.Switch(
+            label="magnet: Links",
+            value=False,
+            disabled=not file_manager.is_running_as_executable()
+        )
         
         def update_status():
             """Update the status display"""
             if not file_manager.is_running_as_executable():
-                status_text.value = "⚠️ File associations can only be set when running as an executable (.exe)"
+                status_icon.name = ft.Icons.WARNING_AMBER_ROUNDED
+                status_icon.color = ft.Colors.ORANGE
+                status_text.value = "Not running as Executable"
                 status_text.color = ft.Colors.ORANGE
-                torrent_status.value = ""
-                magnet_status.value = ""
+                torrent_status.value = "Unavailable"
+                magnet_status.value = "Unavailable"
             else:
                 is_torrent = file_manager.is_torrent_handler()
                 is_magnet = file_manager.is_magnet_handler()
                 
-                torrent_status.value = "✓ .torrent files: Registered" if is_torrent else "✗ .torrent files: Not registered"
+                torrent_status.value = "Registered" if is_torrent else "Not registered"
                 torrent_status.color = ft.Colors.GREEN if is_torrent else ft.Colors.GREY
                 
-                magnet_status.value = "✓ magnet: links: Registered" if is_magnet else "✗ magnet: links: Not registered"
+                magnet_status.value = "Registered" if is_magnet else "Not registered"
                 magnet_status.color = ft.Colors.GREEN if is_magnet else ft.Colors.GREY
                 
+                torrent_switch.value = is_torrent
+                magnet_switch.value = is_magnet
+                
                 if is_torrent and is_magnet:
-                    status_text.value = "✓ SwiftSeed is set as the default handler"
+                    status_icon.name = ft.Icons.CHECK_CIRCLE
+                    status_icon.color = ft.Colors.GREEN
+                    status_text.value = "SwiftSeed is the Default Handler"
                     status_text.color = ft.Colors.GREEN
                 elif is_torrent or is_magnet:
-                    status_text.value = "⚠️ Partially configured"
+                    status_icon.name = ft.Icons.INFO_OUTLINE
+                    status_icon.color = ft.Colors.ORANGE
+                    status_text.value = "Partially Configured"
                     status_text.color = ft.Colors.ORANGE
                 else:
-                    status_text.value = "SwiftSeed is not set as the default handler"
+                    status_icon.name = ft.Icons.CANCEL
+                    status_icon.color = ft.Colors.GREY
+                    status_text.value = "Not set as Default Handler"
                     status_text.color = ft.Colors.GREY
             
-            # Update the page instead of individual controls
             try:
                 self._page.update()
             except:
-                pass  # Controls may not be added to page yet
+                pass
         
+        def on_torrent_toggle(e):
+            if not file_manager.is_running_as_executable():
+                self._show_snack("⚠️ Can only register when running as executable")
+                e.control.value = False
+                e.control.update()
+                return
+            if e.control.value:
+                success, message = file_manager.register_torrent_handler()
+            else:
+                success, message = file_manager.unregister_torrent_handler()
+            self._show_snack(message)
+            update_status()
+
+        def on_magnet_toggle(e):
+            if not file_manager.is_running_as_executable():
+                self._show_snack("⚠️ Can only register when running as executable")
+                e.control.value = False
+                e.control.update()
+                return
+            if e.control.value:
+                success, message = file_manager.register_magnet_handler()
+            else:
+                success, message = file_manager.unregister_magnet_handler()
+            self._show_snack(message)
+            update_status()
+            
+        torrent_switch.on_change = on_torrent_toggle
+        magnet_switch.on_change = on_magnet_toggle
+
         # Initial status check
         update_status()
         
@@ -1892,154 +2048,132 @@ class SettingsView(ft.Container):
             success, message = file_manager.register_all()
             if success:
                 self._show_snack("✓ Successfully registered all handlers!")
-                
                 update_status()
             else:
                 self._show_snack(f"✗ {message}")
         
-        def register_torrent(e):
-            """Register only .torrent handler"""
-            if not file_manager.is_running_as_executable():
-                self._show_snack("⚠️ Can only register when running as executable")
-                return
-            
-            success, message = file_manager.register_torrent_handler()
-            self._show_snack(message)
-            update_status()
-        
-        def register_magnet(e):
-            """Register only magnet: handler"""
-            if not file_manager.is_running_as_executable():
-                self._show_snack("⚠️ Can only register when running as executable")
-                return
-            
-            success, message = file_manager.register_magnet_handler()
-            self._show_snack(message)
-            update_status()
-        
-        def unregister_torrent(e):
-            """Unregister .torrent handler"""
-            success, message = file_manager.unregister_torrent_handler()
-            self._show_snack(message)
-            update_status()
-        
-        def unregister_magnet(e):
-            """Unregister magnet: handler"""
-            success, message = file_manager.unregister_magnet_handler()
-            self._show_snack(message)
-            update_status()
-        
         def open_windows_settings(e):
-            """Open Windows default apps settings"""
             success, message = file_manager.open_windows_default_apps()
             if not success:
                 self._show_snack(message)
         
-        # Build the UI
+        # Build the polished UI
+        is_light = self._page.theme_mode == ft.ThemeMode.LIGHT
+        text_color = ft.Colors.GREY_600 if is_light else ft.Colors.GREY_400
+        divider_color = ft.Colors.with_opacity(0.1, ft.Colors.BLACK if is_light else ft.Colors.WHITE)
+        
+        status_card = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([status_icon, status_text], alignment=ft.MainAxisAlignment.START),
+                    ft.Divider(height=10, color=divider_color),
+                    ft.Row([
+                        ft.Icon(ft.Icons.INSERT_DRIVE_FILE, size=18, color=text_color),
+                        ft.Text(".torrent files:", size=14, weight=ft.FontWeight.W_500),
+                        torrent_status
+                    ]),
+                    ft.Row([
+                        ft.Icon(ft.Icons.LINK, size=18, color=text_color),
+                        ft.Text("magnet: links:", size=14, weight=ft.FontWeight.W_500),
+                        magnet_status
+                    ])
+                ]),
+                padding=20,
+            ),
+            elevation=4,
+        )
+
+        primary_action = ft.Container(
+            content=ft.ElevatedButton(
+                "Set as Default for All",
+                icon=ft.Icons.VERIFIED,
+                on_click=register_all,
+                style=ft.ButtonStyle(
+                    bgcolor=ft.Colors.BLUE_600,
+                    color=ft.Colors.WHITE,
+                    shape=ft.RoundedRectangleBorder(radius=8),
+                    padding=20,
+                ),
+                disabled=not file_manager.is_running_as_executable(),
+                height=60,
+            ),
+        )
+
+        toggle_bg = ft.Colors.with_opacity(0.05, ft.Colors.BLACK if is_light else ft.Colors.WHITE)
+        toggle_border = ft.Colors.with_opacity(0.1, ft.Colors.BLACK if is_light else ft.Colors.WHITE)
+
+        advanced_actions = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.TUNE, size=20, color=ft.Colors.BLUE_500),
+                        ft.Text("Individual Handlers", weight=ft.FontWeight.BOLD, size=16),
+                    ]),
+                    ft.Divider(height=15, color=divider_color),
+                    ft.Text("Manually toggle specific file associations. Useful if you only want to handle torrents or magnets, but not both.", size=13, color=text_color),
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon(ft.Icons.INSERT_DRIVE_FILE, size=20, color=text_color),
+                                torrent_switch
+                            ], alignment=ft.MainAxisAlignment.CENTER),
+                            padding=ft.Padding.symmetric(horizontal=15, vertical=10),
+                            bgcolor=toggle_bg,
+                            border_radius=8,
+                            border=ft.Border.all(1, toggle_border),
+                        ),
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon(ft.Icons.LINK, size=20, color=text_color),
+                                magnet_switch
+                            ], alignment=ft.MainAxisAlignment.CENTER),
+                            padding=ft.Padding.symmetric(horizontal=15, vertical=10),
+                            bgcolor=toggle_bg,
+                            border_radius=8,
+                            border=ft.Border.all(1, toggle_border),
+                        ),
+                    ], spacing=20, wrap=True),
+                ]),
+                padding=20,
+            ),
+            elevation=2,
+        )
+
+        troubleshoot_card = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Troubleshooting", weight=ft.FontWeight.BOLD, size=16),
+                    ft.Divider(height=10, color=divider_color),
+                    ft.Text("If setting defaults doesn't work, Windows 10/11 might be blocking the change. You can manually assign SwiftSeed in the Windows Default Apps menu.", size=13, color=text_color),
+                    ft.Container(height=10),
+                    ft.ElevatedButton(
+                        "Open Windows Default Apps Settings",
+                        icon=ft.Icons.SETTINGS_SYSTEM_DAYDREAM,
+                        on_click=open_windows_settings,
+                    ),
+                ]),
+                padding=20,
+            ),
+            elevation=2,
+        )
+
         return ft.Container(
             content=ft.ListView([
-                ft.Text("File Associations", size=20, weight=ft.FontWeight.BOLD),
+                ft.Text("File Associations", size=24, weight=ft.FontWeight.BOLD),
                 ft.Text("Set SwiftSeed as the default handler for torrent files and magnet links", 
-                       size=12, color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
-                
-                ft.Container(height=20),
-                
-                # Status display
-                ft.Container(
-                    content=ft.Column([
-                        status_text,
-                        ft.Container(height=5),
-                        torrent_status,
-                        magnet_status,
-                    ]),
-                    padding=15,
-                    border=ft.Border.all(1, ft.Colors.GREY_700),
-                    border_radius=8,
-                ),
-                
-                ft.Container(height=20),
-                
-                # Register all button (primary action)
-                ft.ElevatedButton(
-                    "Set as Default for All",
-                    icon=ft.Icons.CHECK_CIRCLE,
-                    on_click=register_all,
-                    style=ft.ButtonStyle(
-                        bgcolor=ft.Colors.GREEN_700,
-                        color=ft.Colors.WHITE,
-                    ),
-                    disabled=not file_manager.is_running_as_executable()
-                ),
+                       size=14, color=text_color),
                 
                 ft.Container(height=10),
-                
-                ft.Text("Or register individually:", size=14, weight=ft.FontWeight.BOLD),
-                ft.Container(height=5),
-                
-                # Individual registration
-                ft.Row([
-                    ft.ElevatedButton(
-                        ".torrent Files",
-                        icon=ft.Icons.INSERT_DRIVE_FILE,
-                        on_click=register_torrent,
-                        disabled=not file_manager.is_running_as_executable()
-                    ),
-                    ft.ElevatedButton(
-                        "magnet: Links",
-                        icon=ft.Icons.LINK,
-                        on_click=register_magnet,
-                        disabled=not file_manager.is_running_as_executable()
-                    ),
-                ], spacing=10),
-                
-                ft.Divider(height=30),
-                
-                # Unregister section
-                ft.Text("Unregister Handlers", size=14, weight=ft.FontWeight.BOLD),
-                ft.Text("Remove SwiftSeed as the default handler", 
-                       size=11, color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
-                ft.Container(height=5),
-                
-                ft.Row([
-                    ft.OutlinedButton(
-                        "Unregister .torrent",
-                        icon=ft.Icons.REMOVE_CIRCLE_OUTLINE,
-                        on_click=unregister_torrent,
-                    ),
-                    ft.OutlinedButton(
-                        "Unregister magnet:",
-                        icon=ft.Icons.LINK_OFF,
-                        on_click=unregister_magnet,
-                    ),
-                ], spacing=10),
-                
-                ft.Divider(height=30),
-                
-                # Windows settings button
-                ft.ElevatedButton(
-                    "Open Windows Default Apps Settings",
-                    icon=ft.Icons.SETTINGS,
-                    on_click=open_windows_settings,
-                ),
-                
+                status_card,
+                ft.Container(height=10),
+                primary_action,
+                ft.Container(height=10),
+                advanced_actions,
+                ft.Container(height=10),
+                troubleshoot_card,
                 ft.Container(height=20),
-                
-                # Help text
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("ℹ️ How it works:", size=12, weight=ft.FontWeight.BOLD),
-                        ft.Text("• After registration, double-clicking .torrent files will open them in SwiftSeed", size=11),
-                        ft.Text("• Clicking magnet: links in your browser will open them in SwiftSeed", size=11),
-                        ft.Text("• You can always change this in Windows Settings > Apps > Default apps", size=11),
-                        ft.Container(height=5),
-                        ft.Text("⚠️ Note: This feature only works when SwiftSeed is running as an .exe file", size=11, italic=True, color=ft.Colors.ORANGE),
-                    ]),
-                    padding=15,
-                    bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.BLUE),
-                    border_radius=8,
-                ),
-                
-            ], expand=True, spacing=10, padding=20),
+            ], expand=True, spacing=10, padding=30),
             expand=True
         )
     

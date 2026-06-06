@@ -18,7 +18,7 @@ class AnimeToshoProvider(SearchProvider):
             url="https://animetosho.org",
             specialized_category=Category.ANIME,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,  # Good anime source
+            enabled_by_default=False,  # Good anime source
             language="English",
         )
     
@@ -307,148 +307,6 @@ class LimeTorrentsProvider(SearchProvider):
             return []
 
 
-class MyPornClubProvider(SearchProvider):
-    """MyPornClub provider."""
-    
-    @property
-    def info(self) -> SearchProviderInfo:
-        return SearchProviderInfo(
-            id="mypornclub",
-            name="MyPornClub",
-            url="https://myporn.club",
-            specialized_category=Category.PORN,
-            safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=False,
-        )
-    
-    def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search MyPornClub."""
-        from urllib.parse import quote
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        
-        # Correct URL pattern: /s/{query}
-        url = f"{self.info.url}/s/{quote(query)}"
-        
-        try:
-            html = self._get(url)
-            if not html:
-                print("MyPornClub: Empty response from search")
-                return []
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            torrents = []
-            pending_torrents = []  # Torrents that need magnet fetching
-            
-            # Results are in .torrent_element containers
-            results = soup.select('.torrent_element')
-            print(f"MyPornClub: Found {len(results)} results")
-            
-            # Limit to first 20 for speed (need to fetch detail pages for magnets)
-            for result in results[:20]:
-                try:
-                    # Find title link (a.tdn with href starting with /t/)
-                    title_link = result.select_one('a.tdn[href^="/t/"]:not(.linkadd)')
-                    if not title_link:
-                        # Fallback to any link with /t/
-                        title_link = result.select_one('a[href^="/t/"]')
-                    
-                    if not title_link:
-                        continue
-                    
-                    name = title_link.get_text(strip=True)
-                    if not name or len(name) < 5:
-                        continue
-                    
-                    desc_path = title_link.get('href', '')
-                    desc_url = f"{self.info.url}{desc_path}"
-                    
-                    # Try to get uploader time from .linkadd
-                    upload_date = 'Unknown'
-                    time_link = result.select_one('a.linkadd')
-                    if time_link:
-                        upload_date = time_link.get_text(strip=True)
-                    
-                    t = Torrent(
-                        name=name,
-                        size='Unknown',
-                        seeders=0,
-                        peers=0,
-                        provider_id=self.info.id,
-                        provider_name=self.info.name,
-                        upload_date=upload_date,
-                        description_url=desc_url,
-                        magnet_uri='',  # Will be fetched
-                        category=Category.PORN,
-                    )
-                    pending_torrents.append(t)
-                except Exception:
-                    continue
-            
-            # Fetch magnet links in parallel
-            if pending_torrents:
-                self._fetch_magnets_parallel(pending_torrents)
-            
-            # Filter out torrents without magnet links
-            torrents = [t for t in pending_torrents if t.magnet_uri]
-            
-            print(f"MyPornClub: Returning {len(torrents)} results with magnets")
-            return torrents
-        except Exception as e:
-            print(f"MyPornClub search error: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
-    
-    def _fetch_magnets_parallel(self, torrents: List[Torrent]):
-        """Fetch magnet links from detail pages in parallel."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import re
-        
-        def fetch_detail(torrent: Torrent):
-            try:
-                detail_html = self._get(torrent.description_url, timeout=10)
-                if not detail_html:
-                    return
-                
-                detail_soup = BeautifulSoup(detail_html, 'html.parser')
-                
-                # Find magnet link
-                magnet_elem = detail_soup.select_one('a[href^="magnet:"]')
-                if magnet_elem:
-                    torrent.magnet_uri = magnet_elem.get('href', '')
-                
-                # Extract seeders
-                seeders_elem = detail_soup.select_one('.teiv_seeders')
-                if seeders_elem:
-                    seeders_text = seeders_elem.get_text(strip=True)
-                    if seeders_text.isdigit():
-                        torrent.seeders = int(seeders_text)
-                
-                # Extract leechers/peers
-                leechers_elem = detail_soup.select_one('.teiv_leechers')
-                if leechers_elem:
-                    leechers_text = leechers_elem.get_text(strip=True)
-                    if leechers_text.isdigit():
-                        torrent.peers = int(leechers_text)
-                
-                # Try to extract size from detail page
-                size_match = re.search(r'(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB|GiB|MiB|Gb|Mb))', detail_html, re.IGNORECASE)
-                if size_match:
-                    torrent.size = size_match.group(1)
-                    
-            except Exception as e:
-                print(f"MyPornClub: Detail fetch error: {e}")
-        
-        # Fetch in parallel with 5 workers
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(fetch_detail, t) for t in torrents]
-            for future in as_completed(futures, timeout=30):
-                try:
-                    future.result()
-                except:
-                    pass
-
-
 class SukebeiProvider(SearchProvider):
     """Sukebei (Nyaa for adult content) provider."""
     
@@ -461,6 +319,7 @@ class SukebeiProvider(SearchProvider):
             specialized_category=Category.PORN,
             safety_status=SearchProviderSafetyStatus.SAFE,
             enabled_by_default=False,
+            language="Japanese",
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -564,7 +423,7 @@ class TokyoToshokanProvider(SearchProvider):
             url="https://www.tokyotosho.info",
             specialized_category=Category.ANIME,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,  # Good anime source
+            enabled_by_default=False,  # Good anime source
             language="Japanese",
         )
     
@@ -692,15 +551,33 @@ class KickassTorrentsProvider(SearchProvider):
         return SearchProviderInfo(
             id="kickasstorrents",
             name="Kickass Torrents",
-            url="https://kickass.torrentbay.st",
+            url="https://kickasstorrents.cc",
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
             enabled_by_default=False,
         )
+        
+    def _fetch_magnet(self, desc_url: str) -> str:
+        try:
+            html = self._get(desc_url, timeout=5)
+            if not html:
+                return ""
+            soup = BeautifulSoup(html, 'html.parser')
+            for a in soup.find_all('a'):
+                href = a.get('href', '')
+                if href.startswith('magnet:'):
+                    return href
+        except Exception:
+            pass
+        return ""
     
     def search(self, query: str, category: Category) -> List[Torrent]:
         """Search Kickass Torrents."""
-        url = f"{self.info.url}/usearch/{query}/"
+        import urllib.parse
+        from concurrent.futures import ThreadPoolExecutor
+        
+        encoded_query = urllib.parse.quote(query)
+        url = f"{self.info.url}/search?query={encoded_query}"
         
         try:
             html = self._get(url)
@@ -709,21 +586,29 @@ class KickassTorrentsProvider(SearchProvider):
             
             soup = BeautifulSoup(html, 'html.parser')
             rows = soup.select('tr.odd, tr.even')
-            
-            torrents = []
-            for row in rows:
+            if not rows:
+                return []
+                
+            def parse_row(row):
                 try:
                     # Title
                     title_cell = row.select_one('a.cellMainLink')
                     if not title_cell:
-                        continue
+                        return None
                     
                     name = title_cell.get_text(strip=True)
-                    desc_url = self.info.url + title_cell.get('href', '')
+                    href = title_cell.get('href', '')
+                    desc_url = href if href.startswith('http') else self.info.url + href
                     
                     # Magnet
                     magnet_link = row.select_one('a[title="Torrent magnet link"]')
                     magnet_uri = magnet_link.get('href', '') if magnet_link else ''
+                    
+                    if not magnet_uri and desc_url:
+                        magnet_uri = self._fetch_magnet(desc_url)
+                        
+                    if not magnet_uri:
+                        return None
                     
                     # Size
                     size_cell = row.select_one('td:nth-child(2)')
@@ -737,7 +622,7 @@ class KickassTorrentsProvider(SearchProvider):
                     peers_cell = row.select_one('td:nth-child(5)')
                     peers = int(peers_cell.get_text(strip=True)) if peers_cell else 0
                     
-                    t = Torrent(
+                    return Torrent(
                         name=name,
                         size=size,
                         seeders=seeds,
@@ -749,11 +634,16 @@ class KickassTorrentsProvider(SearchProvider):
                         magnet_uri=magnet_uri,
                         category=Category.ALL,
                     )
-                    torrents.append(t)
-                except:
-                    continue
+                except Exception:
+                    return None
             
-            return torrents
+            # Limit to max 30 rows to prevent massive parallel requests
+            rows_to_process = rows[:30]
+            
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results = list(executor.map(parse_row, rows_to_process))
+                
+            return [t for t in results if t is not None]
         except Exception as e:
             print(f"Kickass search error: {e}")
             return []
@@ -856,7 +746,7 @@ class IDopeProvider(SearchProvider):
             url="https://idope.se",
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            enabled_by_default=False,
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -958,100 +848,6 @@ class IDopeProvider(SearchProvider):
             return []
 
 
-class MagnetCatProvider(SearchProvider):
-    """MagnetCat provider."""
-    
-    @property
-    def info(self) -> SearchProviderInfo:
-        return SearchProviderInfo(
-            id="magnetcat",
-            name="MagnetCat",
-            url="https://magnetcatcat.com",
-            specialized_category=Category.ALL,
-            safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=False,
-        )
-    
-    def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search MagnetCat."""
-        url = f"{self.info.url}/search?q={query}"
-        
-        try:
-            html = self._get(url)
-            if not html:
-                return []
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            rows = soup.select('table#magnet-table tr')
-            
-            torrents = []
-            for row in rows:
-                try:
-                    # Skip header
-                    if row.find('th'):
-                        continue
-                        
-                    cols = row.find_all('td')
-                    if len(cols) < 4:
-                        continue
-                        
-                    # Title
-                    title_link = cols[0].find('a')
-                    if not title_link:
-                        continue
-                        
-                    name = title_link.get_text(strip=True)
-                    desc_url = self.info.url + title_link.get('href', '')
-                    
-                    # Magnet
-                    magnet_link = cols[0].select_one('a[href^="magnet:"]')
-                    magnet_uri = magnet_link.get('href', '') if magnet_link else ''
-                    
-                    # Size - validate and format
-                    size_raw = cols[1].get_text(strip=True)
-                    import re as re_inner
-                    size_match = re_inner.search(r'(\d+(?:[.,]\d+)?)\s*(GB|GiB|MB|MiB|KB|KiB|TB|TiB)', size_raw, re_inner.I)
-                    if size_match:
-                        try:
-                            num_val = float(size_match.group(1).replace(',', '.'))
-                            unit = size_match.group(2)
-                            if num_val == int(num_val):
-                                size = f"{int(num_val)} {unit}"
-                            else:
-                                size = f"{num_val:.2f} {unit}"
-                        except:
-                            size = size_raw if size_raw else 'Unknown'
-                    else:
-                        size = size_raw if size_raw else 'Unknown'
-                    
-                    # Seeds
-                    seeds = int(cols[2].get_text(strip=True))
-                    
-                    # Peers
-                    peers = int(cols[3].get_text(strip=True))
-                    
-                    t = Torrent(
-                        name=name,
-                        size=size,
-                        seeders=seeds,
-                        peers=peers,
-                        provider_id=self.info.id,
-                        provider_name=self.info.name,
-                        upload_date='Unknown',
-                        description_url=desc_url,
-                        magnet_uri=magnet_uri,
-                        category=Category.ALL,
-                    )
-                    torrents.append(t)
-                except:
-                    continue
-            
-            return torrents
-        except Exception as e:
-            print(f"MagnetCat search error: {e}")
-            return []
-
-
 class ApacheTorrentProvider(SearchProvider):
     """ApacheTorrent provider - movies and series."""
     
@@ -1063,7 +859,7 @@ class ApacheTorrentProvider(SearchProvider):
             url="https://apachetorrent.com",
             specialized_category=Category.MOVIES,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            enabled_by_default=False,
             language="Portuguese",
         )
     
@@ -1595,130 +1391,6 @@ class VSTorrentProvider(SearchProvider):
             return []
 
 
-class SolidTorrentsProvider(SearchProvider):
-    """SolidTorrents provider."""
-    
-    @property
-    def info(self) -> SearchProviderInfo:
-        return SearchProviderInfo(
-            id="solidtorrents",
-            name="SolidTorrents",
-            url="https://solidtorrents.eu",
-            specialized_category=Category.ALL,
-            safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
-        )
-    
-    def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search SolidTorrents."""
-        url = f"{self.info.url}/search?q={query}"
-        
-        try:
-            html = self._get(url)
-            if not html:
-                return []
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            torrents = []
-            
-            # SolidTorrents uses h3 for titles
-            # Structure: Container -> [Title Section (h3), Info Section, Action Section (Magnet)]
-            items = soup.find_all('h3')
-            
-            for item in items:
-                try:
-                    name = item.get_text(strip=True)
-                    if not name:
-                        continue
-                        
-                    # Find container by going up
-                    # Usually h3 -> div -> div (content) -> div (card/row)
-                    container = item
-                    magnet_uri = ''
-                    
-                    # Go up up to 5 levels to find a container that has a magnet link
-                    found_magnet = False
-                    curr = item
-                    for _ in range(5):
-                        if not curr.parent:
-                            break
-                        curr = curr.parent
-                        magnet_elem = curr.select_one('a[href^="magnet:"]')
-                        if magnet_elem:
-                            magnet_uri = magnet_elem.get('href', '')
-                            container = curr
-                            found_magnet = True
-                            break
-                    
-                    if not found_magnet:
-                        continue
-                        
-                    # Description URL (usually the h3 is inside a link or has a link nearby)
-                    desc_url = ''
-                    link = item.find_parent('a') or item.find('a')
-                    if link:
-                        desc_url = link.get('href', '')
-                    else:
-                        # Try to find a link in the container that contains /view/ or /torrent/
-                        link = container.select_one('a[href*="/view/"]') or container.select_one('a[href*="/torrent/"]')
-                        if link:
-                            desc_url = link.get('href', '')
-                            
-                    if desc_url and not desc_url.startswith('http'):
-                        desc_url = self.info.url + desc_url
-                        
-                    # Stats
-                    size = 'Unknown'
-                    seeds = 0
-                    peers = 0
-                    
-                    # Parse text content of container for stats
-                    text = container.get_text(separator=' ', strip=True)
-                    
-                    # Size (e.g. 2.5 GB)
-                    import re
-                    size_match = re.search(r'(\d+(\.\d+)?\s*(GB|MB|KB|TB))', text, re.IGNORECASE)
-                    if size_match:
-                        size = size_match.group(1)
-                    
-                    # Seeds/Peers
-                    # Look for numbers that might be seeds/peers
-                    # Often they are in specific classes or colors, but we can't rely on that without seeing HTML
-                    # Let's try to find numbers in the stats section
-                    # SolidTorrents often has: Size | Date | Seeds | Leechers
-                    # We can try to find all numbers and guess
-                    numbers = re.findall(r'\b\d+\b', text)
-                    if len(numbers) >= 2:
-                        # This is risky, but better than nothing. 
-                        # Usually seeds are the first integer after size/date
-                        pass
-                        
-                    # Try to find elements with specific classes if possible
-                    # But for now, let's rely on the fact that we found the item
-                    
-                    t = Torrent(
-                        name=name,
-                        size=size,
-                        seeders=seeds, # Hard to extract reliably without exact HTML
-                        peers=peers,
-                        provider_id=self.info.id,
-                        provider_name=self.info.name,
-                        upload_date='Unknown',
-                        description_url=desc_url,
-                        magnet_uri=magnet_uri,
-                        category=Category.ALL,
-                    )
-                    torrents.append(t)
-                except:
-                    continue
-            
-            return torrents
-        except Exception as e:
-            print(f"SolidTorrents search error: {e}")
-            return []
-
-
 class XXXClubProvider(SearchProvider):
     """XXXClub provider."""
     
@@ -1905,7 +1577,7 @@ class RarbgDumpProvider(SearchProvider):
             url="https://rarbgdump.com",
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            enabled_by_default=False,
             language="Multi",
         )
     
@@ -1992,9 +1664,79 @@ class SnowflProvider(SearchProvider):
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search Snowfl - note: may require API access."""
-        # Snowfl typically requires JavaScript, return empty for now
-        return []
+        """Search Snowfl via its internal API token system."""
+        import re
+        import random
+        import string
+        from bs4 import BeautifulSoup
+        
+        try:
+            # 1. Get homepage to find b.min.js
+            self._ensure_proxy()
+            # Must use a modern User-Agent to avoid Cloudflare 520 errors on snowfl
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+            response = self.session.get(self.info.url, headers=headers, timeout=10, verify=False)
+            html = response.text
+            
+            soup = BeautifulSoup(html, 'html.parser')
+            script_url = next((self.info.url + '/' + s.get('src').lstrip('/') for s in soup.find_all('script') if s.get('src') and 'b.min.js' in s.get('src')), None)
+            
+            if not script_url:
+                print("Snowfl: Could not find main JS file")
+                return []
+                
+            # 2. Get JS file and extract API token
+            js_response = self.session.get(script_url, headers=headers, timeout=10, verify=False)
+            js_text = js_response.text
+            
+            # The token is a long random string. Ignore the alphabet string which is for base64
+            matches = re.findall(r'\"([a-zA-Z0-9]{30,})\"', js_text)
+            token = next((m for m in matches if m != 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP1234567890'), None)
+            
+            if not token:
+                print("Snowfl: Could not extract API token")
+                return []
+                
+            # 3. Fetch API
+            nonce = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            api_url = f"{self.info.url}/{token}/{query}/{nonce}/0/SEED/NONE/1?_={nonce}"
+            
+            api_response = self.session.get(api_url, headers=headers, timeout=15, verify=False)
+            if api_response.status_code != 200:
+                print(f"Snowfl: API returned {api_response.status_code}")
+                return []
+                
+            data = api_response.json()
+            torrents = []
+            
+            for item in data:
+                try:
+                    name = item.get('name', 'Unknown')
+                    magnet = item.get('magnet', '')
+                    if not magnet:
+                        continue
+                        
+                    t = Torrent(
+                        name=name,
+                        size=item.get('size', 'Unknown'),
+                        seeders=item.get('seeder', 0),
+                        peers=item.get('leecher', 0),
+                        provider_id=self.info.id,
+                        provider_name=self.info.name + f" ({item.get('site', 'Unknown')})",
+                        upload_date=item.get('age', 'Unknown'),
+                        description_url=item.get('url', ''),
+                        magnet_uri=magnet,
+                        category=Category.ALL,
+                    )
+                    torrents.append(t)
+                except Exception as ex:
+                    continue
+                    
+            return torrents
+            
+        except Exception as e:
+            print(f"Snowfl search error: {e}")
+            return []
 
 
 class ExtraTorrentProvider(SearchProvider):
@@ -2218,7 +1960,7 @@ class LeetxProvider(SearchProvider):
         return SearchProviderInfo(
             id="1337x",
             name="1337x",
-            url="https://1337x.to",
+            url="https://www.1377x.to",
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.UNSAFE,
             safety_reason="May have aggressive ads",
@@ -2227,7 +1969,9 @@ class LeetxProvider(SearchProvider):
     
     def search(self, query: str, category: Category) -> List[Torrent]:
         """Search 1337x."""
-        url = f"{self.info.url}/search/{query}/1/"
+        import urllib.parse
+        encoded_query = urllib.parse.quote_plus(query)
+        url = f"{self.info.url}/search/?q={encoded_query}"
         
         try:
             html = self._get(url)
@@ -2242,12 +1986,19 @@ class LeetxProvider(SearchProvider):
             
             for row in rows:
                 try:
-                    name_link = row.select_one('a[href*="/torrent/"]')
+                    name_links = row.select('a[href*="/torrent/"]')
+                    if not name_links:
+                        continue
+                    name_link = name_links[-1]
                     if not name_link:
                         continue
                     
                     name = name_link.get_text(strip=True)
-                    desc_url = self.info.url + name_link.get('href', '')
+                    torrent_path = name_link.get('href', '')
+                    if torrent_path.startswith('http'):
+                        desc_url = torrent_path
+                    else:
+                        desc_url = self.info.url + torrent_path
                     
                     # Get size and seeds from columns
                     cols = row.find_all('td')
@@ -2807,6 +2558,7 @@ class RuTrackerProvider(SearchProvider):
             safety_status=SearchProviderSafetyStatus.SAFE,
             safety_reason="May be blocked, requires registration",
             enabled_by_default=False,
+            language="Russian",
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -2937,61 +2689,6 @@ class TorrentFunkProvider(SearchProvider):
             return []
 
 
-class DemonoidProvider(SearchProvider):
-    """Demonoid provider (classic tracker)."""
-    
-    @property
-    def info(self) -> SearchProviderInfo:
-        return SearchProviderInfo(
-            id="demonoid",
-            name="Demonoid",
-            url="https://www.demonoid.is",
-            specialized_category=Category.ALL,
-            safety_status=SearchProviderSafetyStatus.SAFE,
-            safety_reason="Classic tracker, may be down",
-            enabled_by_default=False,
-        )
-    
-    def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search Demonoid."""
-        url = f"{self.info.url}/files/?query={query}"
-        
-        try:
-            html = self._get(url)
-            if not html:
-                return []
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            torrents = []
-            
-            for row in soup.select('tr'):
-                try:
-                    link = row.select_one('a[href*="/files/details/"]')
-                    if not link:
-                        continue
-                    
-                    name = link.get_text(strip=True)
-                    desc_url = self.info.url + link.get('href', '')
-                    
-                    t = Torrent(
-                        name=name,
-                        size='Unknown',
-                        seeders=0,
-                        peers=0,
-                        provider_id=self.info.id,
-                        provider_name=self.info.name,
-                        upload_date='Unknown',
-                        description_url=desc_url,
-                        magnet_uri='',
-                        category=Category.ALL,
-                    )
-                    torrents.append(t)
-                except:
-                    continue
-            
-            return torrents
-        except Exception as e:
-            return []
 
 
 
@@ -3182,6 +2879,12 @@ class MagnetDLProvider(SearchProvider):
                     name = cols[1].get_text(strip=True)
                     if not name:
                         name = 'Unknown'
+                        
+                    desc_url = self.info.url
+                    title_link = cols[1].find('a', href=True)
+                    if title_link:
+                        href = title_link.get('href', '')
+                        desc_url = href if href.startswith('http') else self.info.url + href
                     
                     # Size - extract just the size value, not extra text
                     size_raw = cols[4].get_text(strip=True)
@@ -3245,7 +2948,7 @@ class MagnetDLProvider(SearchProvider):
                         provider_id=self.info.id,
                         provider_name=self.info.name,
                         upload_date='Unknown',
-                        description_url=self.info.url,
+                        description_url=desc_url,
                         magnet_uri=magnet_uri,
                         category=Category.ALL,
                     )
@@ -3262,64 +2965,99 @@ class MagnetDLProvider(SearchProvider):
 class YifyProvider(SearchProvider):
     """YIFY/YTS provider for movies."""
     
+    API_ENDPOINTS = [
+        "https://yts.rs/api/v2/list_movies.json",
+        "https://yts.mx/api/v2/list_movies.json",
+        "https://yts.cool/api/v2/list_movies.json",
+        "https://yts.torrentbay.st/api/v2/list_movies.json",
+        "https://yts.do/api/v2/list_movies.json",
+    ]
+    
     @property
     def info(self) -> SearchProviderInfo:
         return SearchProviderInfo(
             id="yify",
-            name="YIFY Movies",
-            url="https://yts.mx",
+            name="YTS",
+            url="https://yts.rs",
             specialized_category=Category.MOVIES,
             safety_status=SearchProviderSafetyStatus.SAFE,
             enabled_by_default=False,
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search YIFY/YTS via API."""
-        url = f"{self.info.url}/api/v2/list_movies.json?query_term={query}"
+        """Search YIFY/YTS via API with HTML scraping fallback."""
+        import urllib.parse
         
-        try:
-            data = self._get_json(url)
-            if not data or data.get('status') != 'ok':
-                return []
-            
-            movies = data.get('data', {}).get('movies', [])
-            torrents = []
-            
-            for movie in movies:
-                try:
-                    title = movie.get('title', 'Unknown')
-                    year = movie.get('year', '')
-                    
-                    for torrent in movie.get('torrents', []):
-                        quality = torrent.get('quality', '')
-                        size = torrent.get('size', 'Unknown')
-                        seeds = torrent.get('seeds', 0)
-                        peers = torrent.get('peers', 0)
-                        hash_val = torrent.get('hash', '')
-                        
-                        name = f"{title} ({year}) [{quality}]"
-                        magnet_uri = f"magnet:?xt=urn:btih:{hash_val}&dn={name}"
-                        
-                        t = Torrent(
-                            name=name,
-                            size=size,
-                            seeders=seeds,
-                            peers=peers,
-                            provider_id=self.info.id,
-                            provider_name=self.info.name,
-                            upload_date='Unknown',
-                            description_url=movie.get('url', self.info.url),
-                            magnet_uri=magnet_uri,
-                            category=Category.MOVIES,
-                        )
-                        torrents.append(t)
-                except:
-                    continue
-            
-            return torrents
-        except Exception as e:
-            print(f"YIFY search error: {e}")
+        # 1. Try API endpoints first (fast timeout)
+        data = None
+        for api_base in self.API_ENDPOINTS:
+            url = f"{api_base}?query_term={urllib.parse.quote(query)}&limit=50"
+            try:
+                data = self._get_json(url, timeout=3)
+                if data and 'data' in data and data['data'].get('movies'):
+                    break
+            except:
+                continue
+        
+        # 2. Extract movies from API or fallback to HTML scraping
+        movies = []
+        if data and 'data' in data and data['data'].get('movies'):
+            movies = data['data']['movies']
+        else:
+            # Fallback: scrape yts.rs HTML (NextJS embedded data)
+            encoded_query = urllib.parse.quote(query)
+            search_url = f"https://yts.rs/browse-movies/{encoded_query}/all/all/0/latest/0/all"
+            try:
+                html = self._get(search_url)
+                if html:
+                    import re, json
+                    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html)
+                    if m:
+                        next_data = json.loads(m.group(1))
+                        movies = next_data.get('props', {}).get('pageProps', {}).get('movies', []) or []
+            except Exception as e:
+                print(f"YTS HTML scraping error: {e}")
+        
+        if not movies:
             return []
+        
+        # 3. Parse movies into torrents (one per quality)
+        torrents = []
+        for movie in movies:
+            try:
+                title = movie.get('title', 'Unknown')
+                year = movie.get('year', '')
+                
+                for torrent in movie.get('torrents', []):
+                    quality = torrent.get('quality', '')
+                    torrent_type = torrent.get('type', '')
+                    size = torrent.get('size', 'Unknown')
+                    seeds = torrent.get('seeds', 0)
+                    peers = torrent.get('peers', 0)
+                    hash_val = torrent.get('hash', '')
+                    
+                    quality_label = f"{quality}.{torrent_type}" if torrent_type else quality
+                    name = f"{title} ({year}) [{quality_label}]"
+                    encoded_title = urllib.parse.quote(f"{title} ({year})")
+                    magnet_uri = f"magnet:?xt=urn:btih:{hash_val}&dn={encoded_title}"
+                    
+                    t = Torrent(
+                        name=name,
+                        size=size,
+                        seeders=seeds,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date=movie.get('date_uploaded', 'Unknown'),
+                        description_url=movie.get('url', self.info.url).replace('yts.mx', 'yts.rs'),
+                        magnet_uri=magnet_uri,
+                        category=Category.MOVIES,
+                    )
+                    torrents.append(t)
+            except:
+                continue
+        
+        return torrents
 
 
 class BitSearchProvider(SearchProvider):
@@ -3402,7 +3140,7 @@ class AcademicTorrentsProvider(SearchProvider):
             specialized_category=Category.OTHER,
             safety_status=SearchProviderSafetyStatus.SAFE,
             safety_reason="Legal academic content",
-            enabled_by_default=True,
+            enabled_by_default=False,
         )
     
     import threading
@@ -3575,7 +3313,7 @@ class InternetArchiveProvider(SearchProvider):
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
             safety_reason="Legal public domain content",
-            enabled_by_default=True,  # Legal and working!
+            enabled_by_default=False,  # Legal and working!
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -3656,241 +3394,147 @@ class LibreProvider(SearchProvider):
 
 
 class KickAssTorrentsProvider(SearchProvider):
-    """KickAss Torrents (KAT) provider with multiple mirrors.
-    
-    Based on Torrent-Api-py implementation (https://github.com/Ryuk-me/Torrent-Api-py)
-    which uses https://kickasstorrents.to as the primary source.
-    """
-    
-    # Updated mirrors - kickass.cm verified working December 2024
-    MIRRORS = [
-        "https://kickass.cm",           # VERIFIED WORKING - returns results
-        "https://kickasstorrents.to",   # Primary - used by Torrent-Api-py
-        "https://kickass.sx",
-        "https://kat.am",
-        "https://kickass.ws",
-        "https://kickasstorrents.ws",
-        "https://kkat.net",
-        "https://thekat.info",
-        "https://katcr.to",
-        "https://kat.rip",
-        "https://kickasstorrents.bz",
-        "https://kickasshydra.net",
-        "https://kickass.torrentbay.to",
-        "https://kickass.torrentbay.st",
-    ]
-    
-    working_mirror = None
+    """KickAss Torrents (KAT) provider using kickasstorrents.cc."""
     
     @property
     def info(self) -> SearchProviderInfo:
         return SearchProviderInfo(
             id="kickasstorrents",
             name="KickAss Torrents",
-            url="https://kickasstorrents.to",
+            url="https://kickasstorrents.cc",
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.UNSAFE,
             safety_reason="May have aggressive ads",
-            enabled_by_default=True,
+            enabled_by_default=False,
         )
     
-    def _check_mirror(self, mirror, query):
-        """Check if a mirror is working by performing a quick search."""
+    def _fetch_magnet(self, desc_url: str) -> Optional[str]:
+        """Fetch magnet link from a torrent detail page."""
         try:
-            url = f"{mirror}/usearch/{query}/"
-            # Fast timeout for check
-            # Use improved headers to look like a browser
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "Connection": "keep-alive"
-            }
-            resp = self.session.get(url, headers=headers, timeout=10, verify=False)
-            print(f"DEBUG: Mirror {mirror} returned {resp.status_code}, len={len(resp.content)}")
-            if resp.status_code == 200 and len(resp.content) > 5000:
-                # Basic check for 'Not Found' or blocking pages
-                if "No torrents found" in resp.text:
-                    # Valid page but no results, maybe query issue? Still 'working'
-                    return mirror, resp.text
-                return mirror, resp.text
-        except Exception as e:
-            print(f"DEBUG: Mirror {mirror} failed: {e}")
+            html = self._get(desc_url, timeout=8)
+            if not html:
+                return None
+            soup = BeautifulSoup(html, 'html.parser')
+            magnet_link = soup.select_one('a[href^="magnet:"]')
+            if magnet_link:
+                return magnet_link.get('href', '')
+        except Exception:
             pass
-        return None, None
+        return None
 
     def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
-        """Search KickAss Torrents using parallel mirror racing."""
+        """Search KickAss Torrents on kickasstorrents.cc."""
         import re
         import concurrent.futures
+        import urllib.parse
         
-        html = None
-        active_mirror = None
-        
-        # 1. Try cached working mirror first
-        if self.working_mirror:
-            try:
-                url = f"{self.working_mirror}/usearch/{query}/{page}/"
-                html = self._get(url, timeout=8)
-                if html and len(html) > 5000:
-                    active_mirror = self.working_mirror
-                else:
-                    self.working_mirror = None # Reset
-            except:
-                self.working_mirror = None
-        
-        # 2. If no working mirror, RACE all mirrors
-        if not active_mirror:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_mirror = {executor.submit(self._check_mirror, m, query): m for m in self.MIRRORS}
-                
-                for future in concurrent.futures.as_completed(future_to_mirror):
-                    mirror, result_html = future.result()
-                    if result_html:
-                        self.working_mirror = mirror
-                        active_mirror = mirror
-                        if page > 1:
-                            # Re-fetch correct page
-                            try:
-                                html = self._get(f"{mirror}/usearch/{query}/{page}/", timeout=8)
-                            except:
-                                html = None
-                        else:
-                            html = result_html
-                        break
-            
-            if not active_mirror:
-                return []
-
-        # 3. Parse Results from the Winning Mirror
-        soup = BeautifulSoup(html, 'html.parser')
-        torrents = []
+        encoded_query = urllib.parse.quote(query)
+        url = f"{self.info.url}/search?query={encoded_query}"
         
         try:
-            rows = soup.select('tr.odd, tr.even, tr[id^="torrent"], table.data tr:not(.firstr)')
+            html = self._get(url)
+            if not html:
+                return []
             
-            # List of items needing magnet fetch: (index_in_torrents, desc_url)
-            pending_magnets = []
+            soup = BeautifulSoup(html, 'html.parser')
+            rows = soup.select('tr.odd, tr.even')
             
-            for row in rows:
+            if not rows:
+                return []
+            
+            # Parse all rows to extract info and collect detail page URLs
+            parsed_rows = []
+            for row in rows[:30]:  # Cap at 30 results
                 try:
                     # Title
-                    title_link = row.select_one('a.cellMainLink, a.torrentname, td.torrentnameCell a, a[href*="/torrent/"]')
-                    if not title_link: continue
+                    title_link = row.select_one('a.cellMainLink')
+                    if not title_link:
+                        continue
                     
                     name = title_link.get_text(strip=True)
                     href = title_link.get('href', '')
-                    # Use official URL for display, regardless of which mirror scraped it
-                    desc_url = self.info.url + href if not href.startswith('http') else href
+                    desc_url = href if href.startswith('http') else self.info.url + href
                     
-                    # Magnet
-                    magnet_uri = ''
-                    magnet = row.select_one('a[href^="magnet:"]')
-                    if magnet:
-                        magnet_uri = magnet.get('href', '')
-                    else:
-                        # Backup: InfoHash -> Magnet
-                        for a in row.find_all('a'):
-                            link_href = a.get('href', '')
-                            # Look for 40 char hex hash
-                            hash_match = re.search(r'([a-fA-F0-9]{40})', link_href or '')
-                            if hash_match:
-                                infohash = hash_match.group(1)
-                                from urllib.parse import quote
-                                encoded_name = quote(name)
-                                trackers = [
-                                    "udp://tracker.opentrackr.org:1337/announce",
-                                    "udp://open.stealth.si:80/announce",
-                                    "udp://tracker.openbittorrent.com:80/announce",
-                                    "udp://tracker.torrent.eu.org:451/announce",
-                                    "udp://explodie.org:6969/announce",
-                                    "udp://tracker.moeking.me:6969/announce",
-                                    "udp://p4p.arenabg.com:1337/announce",
-                                    "udp://9.rarbg.me:2970/announce",
-                                    "udp://9.rarbg.to:2710/announce",
-                                    "udp://tracker.tiny-vps.com:6969/announce",
-                                ]
-                                tr_params = "".join([f"&tr={quote(t)}" for t in trackers])
-                                magnet_uri = f"magnet:?xt=urn:btih:{infohash}&dn={encoded_name}{tr_params}"
-                                break
+                    # Size - second td, has data-size attribute
+                    size_cell = row.select_one('td.nobr.center[data-size], td:nth-child(2)')
+                    size = size_cell.get_text(strip=True) if size_cell else 'Unknown'
                     
-                    # Stats - Using column indices like Torrent-Api-py:
-                    # col[1]=size, col[2]=uploader, col[3]=date, col[4]=seeders, col[5]=leechers
-                    cols = row.find_all('td')
-                    size = 'Unknown'
+                    # Seeds - td with class 'green center'
                     seeds = 0
-                    peers = 0
-                    upload_date = 'Unknown'
-                    
-                    # Try column-based extraction (Torrent-Api-py approach)
-                    if len(cols) >= 6:
-                        size = cols[1].get_text(strip=True) if len(cols) > 1 else 'Unknown'
-                        upload_date = cols[3].get_text(strip=True) if len(cols) > 3 else 'Unknown'
+                    seeds_cell = row.select_one('td.green.center')
+                    if seeds_cell:
                         try:
-                            seeds = int(cols[4].get_text(strip=True).replace(',', ''))
-                        except:
+                            seeds = int(seeds_cell.get_text(strip=True).replace(',', ''))
+                        except (ValueError, TypeError):
                             seeds = 0
-                        try:
-                            peers = int(cols[5].get_text(strip=True).replace(',', ''))
-                        except:
-                            peers = 0
-                    else:
-                        # Fallback: search by class/pattern
-                        for col in cols:
-                            text = col.get_text(strip=True)
-                            if re.search(r'\d+(\.\d+)?\s*(GB|MB|KB|TB)', text, re.IGNORECASE):
-                                size = text
-                            if col.get('class') and 'green' in str(col.get('class')):
-                                try: seeds = int(text.replace(',', ''))
-                                except: pass
-                            if col.get('class') and 'red' in str(col.get('class')):
-                                try: peers = int(text.replace(',', ''))
-                                except: pass
-
-                    t = Torrent(
-                        name=name,
-                        size=size,
-                        seeders=seeds,
-                        peers=peers,
-                        provider_id=self.info.id,
-                        provider_name=self.info.name,
-                        upload_date=upload_date,
-                        description_url=desc_url,
-                        magnet_uri=magnet_uri, # May be empty initially
-                        category=Category.ALL,
-                    )
-                    torrents.append(t)
                     
-                    if not magnet_uri:
-                        pending_magnets.append((len(torrents)-1, desc_url))
-                        
-                except: continue
+                    # Peers - td with class 'red lasttd center'
+                    peers = 0
+                    peers_cell = row.select_one('td.red.center, td.red.lasttd')
+                    if peers_cell:
+                        try:
+                            peers = int(peers_cell.get_text(strip=True).replace(',', ''))
+                        except (ValueError, TypeError):
+                            peers = 0
+                    
+                    # Age
+                    age_cell = row.select_one('td.center span.timeago')
+                    upload_date = age_cell.get_text(strip=True) if age_cell else 'Unknown'
+                    
+                    parsed_rows.append({
+                        'name': name,
+                        'desc_url': desc_url,
+                        'size': size,
+                        'seeds': seeds,
+                        'peers': peers,
+                        'upload_date': upload_date,
+                    })
+                except Exception:
+                    continue
             
-            # 4. Parallel Batch Fetch for missing magnets (Limit 15 to be safe)
-            if pending_magnets:
-                to_fetch = pending_magnets[:15] # Fetch top 15 missing only
-                
-                def fetch_magnet(url):
+            if not parsed_rows:
+                return []
+            
+            # Fetch magnets from detail pages in parallel
+            desc_urls = [r['desc_url'] for r in parsed_rows]
+            magnets = {}
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
+                future_to_url = {executor.submit(self._fetch_magnet, u): u for u in desc_urls}
+                for future in concurrent.futures.as_completed(future_to_url):
+                    u = future_to_url[future]
                     try:
-                        h = self._get(url, timeout=5)
-                        if h:
-                            s = BeautifulSoup(h, 'html.parser')
-                            m = s.select_one('a[href^="magnet:"]')
-                            return m['href'] if m else None
-                    except: return None
-                    return None
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                    future_to_idx = {executor.submit(fetch_magnet, url): idx for idx, url in to_fetch}
-                    for future in concurrent.futures.as_completed(future_to_idx):
-                        idx = future_to_idx[future]
                         mag = future.result()
                         if mag:
-                            torrents[idx].magnet_uri = mag
-                            
+                            magnets[u] = mag
+                    except Exception:
+                        pass
+            
+            # Build Torrent objects
+            torrents = []
+            for row_data in parsed_rows:
+                magnet_uri = magnets.get(row_data['desc_url'], '')
+                if not magnet_uri:
+                    continue  # Skip results without magnet links
+                
+                t = Torrent(
+                    name=row_data['name'],
+                    size=row_data['size'],
+                    seeders=row_data['seeds'],
+                    peers=row_data['peers'],
+                    provider_id=self.info.id,
+                    provider_name=self.info.name,
+                    upload_date=row_data['upload_date'],
+                    description_url=row_data['desc_url'],
+                    magnet_uri=magnet_uri,
+                    category=Category.ALL,
+                )
+                torrents.append(t)
+            
             return torrents
             
         except Exception as e:
-            print(f"KickAss parsing error: {e}")
+            print(f"KickAss Torrents search error: {e}")
             return []
 
 
@@ -3907,7 +3551,7 @@ class NNMClubProvider(SearchProvider):
             url="https://nnmclub.to",
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,  # Confirmed accessible
+            enabled_by_default=False,  # Confirmed accessible
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -4100,6 +3744,7 @@ class KinozalProvider(SearchProvider):
             specialized_category=Category.MOVIES,
             safety_status=SearchProviderSafetyStatus.SAFE,
             enabled_by_default=False,
+            language="Russian",
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -4162,6 +3807,7 @@ class RutrackerProvider(SearchProvider):
             safety_status=SearchProviderSafetyStatus.SAFE,
             safety_reason="Requires Login",
             enabled_by_default=False,
+            language="Russian",
         )
     
     def search(self, query: str, category: Category) -> List[Torrent]:
@@ -4180,7 +3826,8 @@ class ByRutorProvider(SearchProvider):
             specialized_category=Category.GAMES,
             safety_status=SearchProviderSafetyStatus.SAFE,
             safety_reason="Russian game repack site",
-            enabled_by_default=True,  # Good games source
+            enabled_by_default=False,  # Good games source
+            language="Russian",
         )
     
     def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
@@ -4289,8 +3936,8 @@ class ByRutorProvider(SearchProvider):
                 
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                # Look for download button (a.downld)
-                download_link = soup.select_one('a.downld')
+                # Look for download button
+                download_link = soup.select_one('a.itemdown_games, a.downld, a[href*="do=download"]')
                 if download_link:
                     download_url = download_link.get('href', '')
                     if download_url:
@@ -4301,8 +3948,15 @@ class ByRutorProvider(SearchProvider):
                         torrent.magnet_uri = download_url
                 
                 # Try to extract more size info from detail page
-                size_elem = soup.select_one('div.packagedownld span, span.size')
-                if size_elem and torrent.size == 'Unknown':
+                size_elem = soup.select_one('div.packagedownld span, span.size, .item_info li:-soup-contains("Размер")')
+                if not size_elem:
+                    # Look for text with "Размер:"
+                    import re
+                    text = soup.get_text()
+                    m = re.search(r'Размер[:\s]+(\d+(?:\.\d+)?\s*(?:ГБ|МБ|GB|MB))', text, re.IGNORECASE)
+                    if m:
+                        torrent.size = m.group(1).replace('ГБ', 'GB').replace('МБ', 'MB')
+                elif torrent.size == 'Unknown':
                     size_text = size_elem.get_text(strip=True)
                     torrent.size = size_text.replace('ГБ', 'GB').replace('МБ', 'MB').replace('КБ', 'KB').replace('ТБ', 'TB')
                     
@@ -4472,6 +4126,7 @@ class ZeroMagnetProvider(SearchProvider):
             safety_status=SearchProviderSafetyStatus.UNSAFE,
             safety_reason="Adult content site",
             enabled_by_default=False,  # NSFW, disabled by default
+            language="Chinese",
         )
     
     def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
@@ -4617,14 +4272,16 @@ class AnirenaProvider(SearchProvider):
             url="https://www.anirena.com",
             specialized_category=Category.ANIME,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
-            language="Japanese",
+            enabled_by_default=False,
+            language="Multi",
         )
     
-    def search(self, query: str, category: Category) -> List[Torrent]:
+    def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
         """Search AniRena."""
-        # Use provided search URL structure
-        url = f"{self.info.url}/index.php?s={query}"
+        from urllib.parse import quote
+        
+        # New URL structure: /?q=query&page=1
+        url = f"{self.info.url}/?q={quote(query)}&page={page}"
         
         try:
             html = self._get(url)
@@ -4634,73 +4291,69 @@ class AnirenaProvider(SearchProvider):
             soup = BeautifulSoup(html, 'html.parser')
             torrents = []
             
-            # Anirena uses div.full2 containing a table for each row
-            divs = soup.select('div.full2')
+            # Anirena now uses a table with tr[data-torrent-id]
+            rows = soup.select('tr[data-torrent-id]')
             
-            for div in divs:
+            for row in rows:
                 try:
-                    # Skip header/search divs
-                    if div.find('span', class_='torrents_type'): # Header
-                        continue
-                    if div.get('id', '').startswith('details'): # Hidden details
-                        continue
-                        
-                    table = div.find('table')
-                    if not table:
-                        continue
-                        
-                    tr = table.find('tr')
-                    if not tr:
-                        continue
-                    
-                    cols = tr.find_all('td')
-                    if len(cols) < 7:
-                        continue
-                        
-                    # Title
-                    title_div = cols[1].find('div')
-                    if not title_div:
-                        title_div = cols[1] # Fallback
-                        
-                    # Title is usually the 2nd link (first is Group) or the one with nohref/onClick
-                    title_link = title_div.find('a', attrs={'nohref': True}) or title_div.find('a', attrs={'onClick': True})
-                    
-                    if not title_link:
-                        # Fallback logic
-                        links = title_div.find_all('a')
-                        if len(links) > 1:
-                            title_link = links[1]
-                        elif links:
-                            title_link = links[0]
-                    
+                    # Title and Description URL
+                    title_link = row.select_one('td.col-name a.tl-torrent-name')
                     if not title_link:
                         continue
                         
                     name = title_link.get_text(strip=True)
+                    desc_href = title_link.get('href', '')
+                    desc_url = self.info.url + desc_href if desc_href.startswith('/') else self.info.url + '/' + desc_href
+                    
                     if not name:
                         continue
 
-                    # Magnet
-                    magnet_link = cols[2].select_one('a[href^="magnet:"]')
-                    magnet_uri = magnet_link.get('href', '') if magnet_link else ''
+                    # Magnet / Torrent Download Link
+                    # The download link for the .torrent file is typically in a[title="Download Torrent"]
+                    download_link = row.select_one('a[title="Download Torrent"], a[download]')
+                    magnet_uri = ''
+                    if download_link:
+                        dl_href = download_link.get('href', '')
+                        if dl_href:
+                            magnet_uri = self.info.url + dl_href if dl_href.startswith('/') else self.info.url + '/' + dl_href
+
+                    if not magnet_uri:
+                        # Fallback to magnet link button if present, though it might be a redirect page
+                        magnet_btn = row.select_one('a[title="Magnet Link"]')
+                        if magnet_btn:
+                            mg_href = magnet_btn.get('href', '')
+                            magnet_uri = self.info.url + mg_href if mg_href.startswith('/') else self.info.url + '/' + mg_href
                     
                     if not magnet_uri:
                         continue
 
                     # Size
-                    size = cols[3].get_text(strip=True)
+                    size_elem = row.select_one('td.col-size, span.tl-meta-size')
+                    size = 'Unknown'
+                    if size_elem:
+                        size = size_elem.get_text(strip=True)
                     
                     # Seeds
                     seeds = 0
-                    seeds_text = cols[4].get_text(strip=True)
-                    if seeds_text.isdigit():
-                        seeds = int(seeds_text)
-                        
+                    seeds_elem = row.select_one('span.tl-se')
+                    if seeds_elem:
+                        seeds_text = seeds_elem.get_text(strip=True)
+                        if seeds_text.isdigit():
+                            seeds = int(seeds_text)
+                            
                     # Leechers
                     peers = 0
-                    peers_text = cols[5].get_text(strip=True)
-                    if peers_text.isdigit():
-                        peers = int(peers_text)
+                    peers_elem = row.select_one('span.tl-le')
+                    if peers_elem:
+                        peers_text = peers_elem.get_text(strip=True)
+                        if peers_text.isdigit():
+                            peers = int(peers_text)
+                            
+                    # Upload Date
+                    upload_date = 'Unknown'
+                    date_elem = row.select_one('span[data-utc]')
+                    if date_elem:
+                        upload_date = date_elem.get('data-utc', '')[:10]  # Just YYYY-MM-DD
                     
                     t = Torrent(
                         name=name,
@@ -4709,8 +4362,8 @@ class AnirenaProvider(SearchProvider):
                         peers=peers,
                         provider_id=self.info.id,
                         provider_name=self.info.name,
-                        upload_date='Unknown',
-                        description_url=self.info.url,
+                        upload_date=upload_date,
+                        description_url=desc_url,
                         magnet_uri=magnet_uri,
                         category=Category.ANIME,
                     )
@@ -4735,7 +4388,7 @@ class ACGRipProvider(SearchProvider):
             url="https://acg.rip",
             specialized_category=Category.ANIME,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            enabled_by_default=False,
             language="Chinese",
         )
     
@@ -4824,7 +4477,7 @@ class BigFanGroupProvider(SearchProvider):
             url="https://bigfangroup.org",
             specialized_category=Category.MOVIES,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            enabled_by_default=False,
             language="Russian",
         )
     
@@ -4964,10 +4617,10 @@ class CpasbienProvider(SearchProvider):
         return SearchProviderInfo(
             id="cpasbien",
             name="Cpasbien",
-            url="https://www1.cpasbien.to",
+            url="https://www.cpasbien2.cc",
             specialized_category=Category.ALL,
             safety_status=SearchProviderSafetyStatus.SAFE,
-            enabled_by_default=True,
+            enabled_by_default=False,
             language="French",
         )
     
@@ -4976,11 +4629,13 @@ class CpasbienProvider(SearchProvider):
         import re
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
-        # Search URL pattern - cpasbien uses /search_torrent/QUERY.html
-        url = f"{self.info.url}/search_torrent/{query}.html"
+        # Search URL pattern
+        url = f"{self.info.url}/recherche/{query}.html"
         
         try:
-            html = self._get(url, timeout=15)
+            self._ensure_proxy()
+            response = self.session.post(url, data={'torrentSearch': query}, timeout=15, verify=False)
+            html = response.text
             
             if not html:
                 print("Cpasbien: Empty response")
@@ -5110,10 +4765,22 @@ class CpasbienProvider(SearchProvider):
                 
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                # Find magnet link
-                magnet = soup.select_one('a[href^="magnet:"]')
-                if magnet:
-                    torrent.magnet_uri = magnet.get('href', '')
+                # Find torrent link (new cpasbien layout uses /get_torrents/...)
+                torrent_link = soup.select_one('a[href^="/get_torrents/"], a[href^="magnet:"]')
+                if torrent_link:
+                    href = torrent_link.get('href', '')
+                    if href.startswith('/get_torrents/'):
+                        # Extract infohash from URL (e.g. /get_torrents/a8f7ecc6beb328cc7264fc2cc9d5a86b498d8bc1)
+                        hash_str = href.split('/')[-1]
+                        import re
+                        if re.match(r'^[a-fA-F0-9]{40}$', hash_str):
+                            import urllib.parse
+                            dn = urllib.parse.quote(torrent.name)
+                            torrent.magnet_uri = f"magnet:?xt=urn:btih:{hash_str}&dn={dn}"
+                        else:
+                            torrent.magnet_uri = f"{self.info.url}{href}"
+                    else:
+                        torrent.magnet_uri = href
             except Exception as e:
                 print(f"Cpasbien: Detail fetch error: {e}")
         
@@ -5902,246 +5569,6 @@ class FreeJavTorrentProvider(SearchProvider):
             return None
 
 
-class PiratesParadiseProvider(SearchProvider):
-    """Pirates Paradise - Clean torrent search site with Movies and TV."""
-    
-    # Common trackers for magnet links
-    TRACKERS = [
-        "udp://tracker.opentrackr.org:1337/announce",
-        "udp://tracker.openbittorrent.com:6969/announce",
-        "udp://open.tracker.cl:1337/announce",
-        "udp://tracker.torrent.eu.org:451/announce",
-    ]
-    
-    @property
-    def info(self) -> SearchProviderInfo:
-        return SearchProviderInfo(
-            id="piratesparadise",
-            name="Pirates Paradise",
-            url="https://piratesparadise.org",
-            specialized_category=None,  # General - Movies and TV
-            safety_status=SearchProviderSafetyStatus.SAFE,
-            safety_reason="Clean interface, no ads, movies and TV shows",
-            enabled_by_default=True,
-            language="English",
-        )
-    
-    def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search Pirates Paradise for torrents."""
-        import re
-        from urllib.parse import quote, urlencode
-        
-        url = f"{self.info.url}/search.php?q={quote(query)}"
-        
-        try:
-            html = self._get(url, timeout=15)
-            
-            if not html:
-                print("PiratesParadise: Empty response")
-                return []
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            torrents = []
-            
-            # Find all torrent links - format: /torrent/{info_hash}
-            links = soup.find_all('a', href=True)
-            
-            for link in links:
-                try:
-                    href = link.get('href', '')
-                    text = link.get_text(strip=True)
-                    
-                    # Skip non-torrent links
-                    if not href or '/torrent/' not in href:
-                        continue
-                    
-                    # Skip pagination and other links
-                    if not text or len(text) < 5:
-                        continue
-                    
-                    # Extract info hash from URL
-                    match = re.search(r'/torrent/([a-fA-F0-9]{40})', href)
-                    if not match:
-                        continue
-                    
-                    info_hash = match.group(1).lower()
-                    
-                    # Build magnet link directly from info hash
-                    tracker_params = "&".join([f"tr={quote(t)}" for t in self.TRACKERS])
-                    magnet = f"magnet:?xt=urn:btih:{info_hash}&{tracker_params}"
-                    
-                    # Build detail URL
-                    if href.startswith('http'):
-                        desc_url = href
-                    else:
-                        desc_url = f"{self.info.url}{href}" if href.startswith('/') else f"{self.info.url}/{href}"
-                    
-                    # Determine category from name
-                    name = text.strip()
-                    torrent_category = Category.MOVIES
-                    name_lower = name.lower()
-                    if any(x in name_lower for x in ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 'season', 'episode', 'series']):
-                        torrent_category = Category.SERIES
-                    
-                    t = Torrent(
-                        name=name,
-                        size='Unknown',  # Not shown in search results
-                        seeders=-1,  # Not shown in search listing
-                        peers=-1,
-                        provider_id=self.info.id,
-                        provider_name=self.info.name,
-                        upload_date='Unknown',
-                        description_url=desc_url,
-                        magnet_uri=magnet,
-                        category=torrent_category,
-                    )
-                    
-                    # Avoid duplicates
-                    if not any(existing.magnet_uri == t.magnet_uri for existing in torrents):
-                        torrents.append(t)
-                        
-                except Exception as ex:
-                    continue
-            
-            print(f"PiratesParadise: Found {len(torrents)} results")
-            return torrents[:50]  # Limit results
-            
-        except Exception as e:
-            print(f"PiratesParadise search error: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
-
-
-class MagnetCatProvider(SearchProvider):
-    """MagnetCat - Magnet link search engine with billions of torrents."""
-    
-    @property
-    def info(self) -> SearchProviderInfo:
-        return SearchProviderInfo(
-            id="magnetcat",
-            name="MagnetCat",
-            url="https://magnetcatcat.com",
-            specialized_category=None,  # General - All categories
-            safety_status=SearchProviderSafetyStatus.SAFE,
-            safety_reason="Magnet search engine with no ads",
-            enabled_by_default=True,
-            language="Multi",
-        )
-    
-    def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search MagnetCat for torrents."""
-        import re
-        from urllib.parse import quote
-        
-        # URL format: /search-{query}-{category}-{sort}-{page}.html
-        # category: 0=all, sort: 0=relevance, page: 1
-        encoded_query = quote(query, safe='')
-        url = f"{self.info.url}/search-{encoded_query}-0-0-1.html"
-        
-        try:
-            html = self._get(url, timeout=30)
-            
-            if not html:
-                print("MagnetCat: Empty response")
-                return []
-            
-            soup = BeautifulSoup(html, 'html.parser')
-            torrents = []
-            
-            # Find ssbox divs - each contains one result
-            ssboxes = soup.find_all('div', class_='ssbox')
-            
-            for ssbox in ssboxes:
-                try:
-                    # Find all links in this ssbox
-                    all_links = ssbox.find_all('a', href=True)
-                    
-                    name = None
-                    magnet_uri = None
-                    desc_url = None
-                    
-                    for link in all_links:
-                        href = link.get('href', '')
-                        text = link.get_text(strip=True)
-                        
-                        # Check if it's a magnet link
-                        if href.startswith('magnet:'):
-                            magnet_uri = href
-                        # Check if it's a title link (not magnet, has actual text)
-                        elif text and len(text) > 5 and '磁力' not in text and 'magnet' not in text.lower():
-                            if not name:  # Take the first valid title
-                                name = text
-                                desc_url = href if href.startswith('http') else f"{self.info.url}{href}"
-                    
-                    if not magnet_uri:
-                        continue
-                    
-                    # Extract info hash from magnet
-                    hash_match = re.search(r'btih:([a-fA-F0-9]{40})', magnet_uri)
-                    if not hash_match:
-                        continue
-                    
-                    info_hash = hash_match.group(1).lower()
-                    
-                    # Fallback for name
-                    if not name:
-                        dn_match = re.search(r'dn=([^&]+)', magnet_uri)
-                        if dn_match:
-                            from urllib.parse import unquote
-                            name = unquote(dn_match.group(1))
-                        else:
-                            name = f"Torrent {info_hash[:16]}"
-                    
-                    if not desc_url:
-                        desc_url = f"{self.info.url}/hash/{info_hash}.html"
-                    
-                    # Find size in the ssbox text
-                    ssbox_text = ssbox.get_text()
-                    # More strict regex: require at least one digit, match larger units first
-                    size_match = re.search(r'(\d+(?:[.,]\d+)?)\s*(GB|GiB|MB|MiB|KB|KiB|TB|TiB)', ssbox_text, re.I)
-                    if size_match:
-                        # Format with limited decimal places
-                        try:
-                            num_val = float(size_match.group(1).replace(',', '.'))
-                            unit = size_match.group(2)
-                            if num_val == int(num_val):
-                                size = f"{int(num_val)} {unit}"
-                            else:
-                                size = f"{num_val:.2f} {unit}"
-                        except:
-                            size = size_match.group(0)
-                    else:
-                        size = 'Unknown'
-                    
-                    t = Torrent(
-                        name=name,
-                        size=size,
-                        seeders=-1,
-                        peers=-1,
-                        provider_id=self.info.id,
-                        provider_name=self.info.name,
-                        upload_date='Unknown',
-                        description_url=desc_url,
-                        magnet_uri=magnet_uri,
-                        category=Category.OTHER,
-                    )
-                    
-                    # Avoid duplicates
-                    if not any(existing.magnet_uri == t.magnet_uri for existing in torrents):
-                        torrents.append(t)
-                        
-                except Exception as ex:
-                    continue
-            
-            print(f"MagnetCat: Found {len(torrents)} results")
-            return torrents[:50]
-            
-        except Exception as e:
-            print(f"MagnetCat search error: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
 
 
 class GamesTorrentsProvider(SearchProvider):
@@ -6444,7 +5871,7 @@ class SkidrowRepackProvider(SearchProvider):
         return SearchProviderInfo(
             id="skidrowrepack",
             name="Skidrow Repack",
-            url="https://skidrowrepack.com",
+            url="https://www.skidrowreloadedcrack.com",
             specialized_category=Category.GAMES,
             safety_status=SearchProviderSafetyStatus.UNSAFE,
             safety_reason="Contains cracked games - use at your own risk",
@@ -6462,7 +5889,7 @@ class SkidrowRepackProvider(SearchProvider):
             query = query + " game"  # Pad short queries
         
         # Search URL format
-        url = f"{self.info.url}/index.php?do=search&subaction=search&story={quote(query)}"
+        url = f"{self.info.url}/?s={quote(query)}&x=0&y=0"
         
         try:
             html = self._get(url, timeout=20)
@@ -6474,17 +5901,23 @@ class SkidrowRepackProvider(SearchProvider):
             soup = BeautifulSoup(html, 'html.parser')
             torrents = []
             
-            # Find game links with class "mov-t" or in article/entry containers
-            game_links = soup.find_all('a', class_='mov-t')
-            
-            # If no mov-t links, try finding links in search results
-            if not game_links:
-                game_links = soup.find_all('a', href=re.compile(r'/\d+-.*\.html$'))
+            # Find game links in post containers
+            posts = soup.select('div.post, article')
             
             seen_urls = set()
             
-            for link in game_links:
+            for p in posts:
                 try:
+                    h2 = p.find('h2')
+                    link = None
+                    if h2 and h2.find('a'):
+                        link = h2.find('a')
+                    else:
+                        link = p.find('a', rel='bookmark')
+                        
+                    if not link:
+                        continue
+                        
                     href = link.get('href', '')
                     text = link.get_text(strip=True)
                     
@@ -6494,15 +5927,12 @@ class SkidrowRepackProvider(SearchProvider):
                     
                     seen_urls.add(href)
                     
-                    # Try to find size from parent elements or nearby text
                     size = 'Unknown'
-                    parent = link.find_parent(['div', 'li', 'article', 'section', 'td'])
-                    if parent:
-                        parent_text = parent.get_text()
-                        # Look for size patterns like "12.5 GB", "800 MB", etc
-                        size_match = re.search(r'(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB|KB))', parent_text, re.I)
-                        if size_match:
-                            size = size_match.group(1).strip()
+                    parent_text = p.get_text()
+                    # Look for size patterns like "12.5 GB", "800 MB", etc
+                    size_match = re.search(r'(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB|KB))', parent_text, re.I)
+                    if size_match:
+                        size = size_match.group(1).strip()
                     
                     # Build full URL if needed
                     if not href.startswith('http'):
@@ -6528,8 +5958,8 @@ class SkidrowRepackProvider(SearchProvider):
             
             print(f"SkidrowRepack: Found {len(torrents)} results")
             
-            # Fetch sizes from detail pages for first 25 results
-            self._fetch_sizes(torrents[:25])
+            # Fetch sizes and specific links from detail pages for first 25 results
+            torrents = self._fetch_details(torrents[:25]) + torrents[25:]
             
             return torrents[:50]
             
@@ -6539,90 +5969,115 @@ class SkidrowRepackProvider(SearchProvider):
             traceback.print_exc()
             return []
     
-    def _fetch_sizes(self, torrents: List[Torrent]):
-        """Fetch file sizes from detail pages in parallel."""
+    def _fetch_details(self, torrents: List[Torrent]) -> List[Torrent]:
+        """Fetch file sizes and all available torrent links from detail pages in parallel."""
         import concurrent.futures
         import re
+        import copy
         
-        def fetch_size(torrent: Torrent):
+        def fetch_detail(torrent: Torrent) -> List[Torrent]:
             try:
                 html = self._get(torrent.description_url, timeout=15)
                 if not html:
-                    return
+                    return [torrent]
                 
                 content = html
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html, 'html.parser')
                 
-                # Pattern 1: Free Disk Space (most common on Skidrow Repack)
+                # Fetch size
+                size = torrent.size
                 free_disk_match = re.search(r'Free\s*Disk\s*Space[:\s]*(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
                 if free_disk_match:
-                    torrent.size = free_disk_match.group(1).replace(',', '.')
-                    return
+                    size = free_disk_match.group(1).replace(',', '.')
+                else:
+                    hdd_match = re.search(r'(?:Hard\s*disk|HDD|Disk\s*space)[:\s]*(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
+                    if hdd_match:
+                        size = hdd_match.group(1).replace(',', '.')
+                    else:
+                        storage_match = re.search(r'(?:Storage|Space\s*required|Available\s*space)[:\s]*(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
+                        if storage_match:
+                            size = storage_match.group(1).replace(',', '.')
+                        else:
+                            repack_match = re.search(r'(?:Repack|Download|Game|File|Install|Installed)\s*(?:size)?[:\s~]+(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
+                            if repack_match:
+                                size = repack_match.group(1).replace(',', '.')
+                                
+                torrent.size = size
                 
-                # Pattern 2: Hard disk space / HDD requirement
-                hdd_match = re.search(r'(?:Hard\s*disk|HDD|Disk\s*space)[:\s]*(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
-                if hdd_match:
-                    torrent.size = hdd_match.group(1).replace(',', '.')
-                    return
+                # Fetch multiple torrent links
+                magnets = soup.find_all('a', href=lambda h: h and h.startswith('magnet:'))
+                torrent_links = soup.find_all('a', href=lambda h: h and ('.torrent' in h.lower() or 'torrent' in h.lower() or 'do=download' in h.lower()))
                 
-                # Pattern 3: Storage / Space required
-                storage_match = re.search(r'(?:Storage|Space\s*required|Available\s*space)[:\s]*(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
-                if storage_match:
-                    torrent.size = storage_match.group(1).replace(',', '.')
-                    return
+                unique_links = {}
                 
-                # Pattern 4: Repack size / Download size / Game size / File size
-                repack_match = re.search(r'(?:Repack|Download|Game|File|Install|Installed)\s*(?:size)?[:\s~]+(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
-                if repack_match:
-                    torrent.size = repack_match.group(1).replace(',', '.')
-                    return
+                def is_generic_text(t):
+                    return t.lower() in ['download', 'torrent', 'download .torrent', 'download torrent', 'link', 'click here', '']
                 
-                # Pattern 5: Size mentioned with approximate indicator
-                approx_match = re.search(r'(?:~|about|approximately|around)\s*(\d+(?:[.,]\d+)?\s*(?:GB|MB|TB))', content, re.I)
-                if approx_match:
-                    torrent.size = f"~{approx_match.group(1).replace(',', '.')}"
-                    return
-                
-                # Pattern 6: Look for largest GB value (likely game size, not RAM)
-                # Skip common RAM values like "8 GB" and "16 GB"
-                all_sizes = re.findall(r'(\d+(?:[.,]\d+)?)\s*(GB|MB|TB)', content, re.I)
-                if all_sizes:
-                    # Find the largest size in GB (excluding typical RAM values 4, 8, 16, 32)
-                    ram_values = {4, 8, 16, 32}
-                    best_size = None
-                    best_bytes = 0
-                    
-                    for num_str, unit in all_sizes:
-                        try:
-                            num = float(num_str.replace(',', '.'))
-                            unit = unit.upper()
+                for m in magnets:
+                    href = m.get('href')
+                    text = m.get_text(strip=True) or "Magnet"
+                    if href not in unique_links or (is_generic_text(unique_links[href]) and not is_generic_text(text)):
+                        unique_links[href] = text
+                        
+                for t in torrent_links:
+                    href = t.get('href')
+                    if not href.startswith('http') and not href.startswith('magnet:'):
+                        href = f"{self.info.url}{href}" if href.startswith('/') else f"{self.info.url}/{href}"
+                        
+                    # Ignore non-torrent links that just say "torrent"
+                    if not href.endswith('.torrent') and 'do=download' not in href and not href.startswith('magnet:'):
+                        if not any(x in href.lower() for x in ['.torrent', 'download', 'file']):
+                            continue
                             
-                            # Skip typical RAM values if they're exactly matching
-                            if unit == 'GB' and int(num) in ram_values and num == int(num):
-                                continue
-                            
-                            # Calculate byte value for comparison
-                            if unit == 'TB':
-                                bytes_val = num * 1024 * 1024 * 1024 * 1024
-                            elif unit == 'GB':
-                                bytes_val = num * 1024 * 1024 * 1024
-                            else:  # MB
-                                bytes_val = num * 1024 * 1024
-                            
-                            if bytes_val > best_bytes:
-                                best_bytes = bytes_val
-                                best_size = f"{num_str} {unit}"
-                        except:
-                            pass
+                    text = t.get_text(strip=True) or "Torrent"
+                    if href not in unique_links or (is_generic_text(unique_links[href]) and not is_generic_text(text)):
+                        unique_links[href] = text
+                        
+                # Filter out links that go back to the homepage
+                filtered_links = {k: v for k, v in unique_links.items() if k != self.info.url and k != f"{self.info.url}/"}
+                
+                if not filtered_links:
+                    return [torrent]
                     
-                    if best_size:
-                        torrent.size = best_size
+                # Check if all texts are the same (happens with copy-pasted HTML)
+                all_texts = list(filtered_links.values())
+                texts_are_identical = len(set(all_texts)) == 1 and len(all_texts) > 1
+                
+                results = []
+                for href, text in filtered_links.items():
+                    new_t = copy.deepcopy(torrent)
+                    new_t.magnet_uri = href
                     
+                    if len(filtered_links) > 1:
+                        desc = text
+                        # Fallback to filename if generic or if all texts are identical
+                        if (texts_are_identical or desc.lower() in ['download', 'torrent', 'download .torrent', 'download torrent', 'link', 'click here', '']) and href.endswith('.torrent'):
+                            filename = href.split('/')[-1].replace('.torrent', '')
+                            # If we have a valid text, combine them, otherwise just use filename
+                            if texts_are_identical and not is_generic_text(desc):
+                                desc = f"{filename} - {desc}"
+                            else:
+                                desc = filename
+                        
+                        if desc and desc.lower() not in new_t.name.lower():
+                            new_t.name = f"{new_t.name} ({desc})"
+                            
+                    results.append(new_t)
+                    
+                return results
+                
             except Exception as e:
-                print(f"SkidrowRepack: Error fetching size: {e}")
+                print(f"SkidrowRepack: Error fetching detail: {e}")
+                return [torrent]
         
-        # Fetch in parallel with max 5 workers
+        all_results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            executor.map(fetch_size, torrents)
+            for res_list in executor.map(fetch_detail, torrents):
+                if res_list:
+                    all_results.extend(res_list)
+                    
+        return all_results
 
     
     def resolve_download(self, torrent: Torrent) -> Optional[str]:
@@ -6663,6 +6118,11 @@ class SkidrowRepackProvider(SearchProvider):
             
             soup = BeautifulSoup(html, 'html.parser')
             
+            # Try to find magnet link first
+            magnet_link = soup.find('a', href=re.compile(r'^magnet:'))
+            if magnet_link:
+                return magnet_link.get('href')
+                
             # Find torrent download link
             # Patterns: "Download .torrent" link or index.php?do=download&id=
             torrent_link = soup.find('a', href=re.compile(r'do=download'))
@@ -6670,10 +6130,12 @@ class SkidrowRepackProvider(SearchProvider):
                 torrent_link = soup.find('a', string=re.compile(r'Download.*torrent', re.I))
             if not torrent_link:
                 torrent_link = soup.find('a', class_='dwn-load')
+            if not torrent_link:
+                torrent_link = soup.find('a', href=lambda h: h and ('.torrent' in h or 'torrent' in h.lower()))
             
             if torrent_link:
                 torrent_url = torrent_link.get('href', '')
-                if not torrent_url.startswith('http'):
+                if not torrent_url.startswith('http') and not torrent_url.startswith('magnet:'):
                     torrent_url = f"{self.info.url}{torrent_url}" if torrent_url.startswith('/') else f"{self.info.url}/{torrent_url}"
                 
                 print(f"SkidrowRepack: Found torrent URL: {torrent_url}")
@@ -6690,10 +6152,6 @@ class SkidrowRepackProvider(SearchProvider):
                 else:
                     print("SkidrowRepack: Downloaded content is not a valid torrent")
             else:
-                # Try to find magnet link as fallback
-                magnet_link = soup.find('a', href=re.compile(r'^magnet:'))
-                if magnet_link:
-                    return magnet_link.get('href')
                 print("SkidrowRepack: No torrent/magnet link found on detail page")
                 
         except Exception as e:
@@ -6735,11 +6193,11 @@ class FTUAppsProvider(SearchProvider):
         return SearchProviderInfo(
             id="ftuapps",
             name="FTUApps",
-            url="https://ftuapps1.farlad.com",
+            url="https://ftuapps.dev",
             specialized_category=Category.APPS,
             safety_status=SearchProviderSafetyStatus.UNSAFE,
             safety_reason="Contains cracked software - use at your own risk",
-            enabled_by_default=False,
+            enabled_by_default=True,
             language="Multi",
         )
     
@@ -6748,7 +6206,16 @@ class FTUAppsProvider(SearchProvider):
         import re
         from urllib.parse import quote
         
-        url = f"{self.info.url}/?s={quote(query)}"
+        # Resolve the base URL because ftuapps.dev redirects and drops query params
+        base_url = self.info.url
+        try:
+            resp = self.session.get(base_url, timeout=10, verify=False)
+            if resp.status_code == 200:
+                base_url = resp.url.rstrip('/')
+        except Exception:
+            pass
+            
+        url = f"{base_url}/?s={quote(query)}&asp_active=1&p_asid=1&p_asp_data=1&asp_gen[]=excerpt&asp_gen[]=content&asp_gen[]=title&filters_initial=1&filters_changed=0&qtranslate_lang=0&current_page_id=-1"
         
         try:
             html = self._get(url, timeout=20)
@@ -6763,7 +6230,7 @@ class FTUAppsProvider(SearchProvider):
             
             # Find article links - pattern varies, look for post links
             # The site uses WordPress-style URLs
-            post_links = soup.find_all('a', href=re.compile(rf'{re.escape(self.info.url)}/[a-z0-9-]+/$'))
+            post_links = soup.find_all('a', href=re.compile(rf'{re.escape(base_url)}/[a-z0-9-]+/$'))
             
             for link in post_links:
                 try:
@@ -6927,7 +6394,7 @@ class CroTorrentsProvider(SearchProvider):
             specialized_category=Category.GAMES,
             safety_status=SearchProviderSafetyStatus.SAFE,
             safety_reason="Game torrent site with clean downloads",
-            enabled_by_default=True,
+            enabled_by_default=False,
         )
     
     def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
@@ -7114,7 +6581,7 @@ class PlazaPCGamesProvider(SearchProvider):
             specialized_category=Category.GAMES,
             safety_status=SearchProviderSafetyStatus.SAFE,
             safety_reason="Game torrent site with PLAZA releases",
-            enabled_by_default=True,
+            enabled_by_default=False,
         )
     
     def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
@@ -7252,3 +6719,1105 @@ class PlazaPCGamesProvider(SearchProvider):
         except Exception as e:
             print(f"PlazaPCGames resolve error: {e}")
             return None
+
+
+class SolidTorrentsProvider(SearchProvider):
+    """SolidTorrents provider."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="solidtorrents",
+            name="SolidTorrents",
+            url="https://solidtorrents.eu",
+            specialized_category=Category.ALL,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+        )
+    
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search SolidTorrents via API."""
+        url = f"{self.info.url}/api/v1/search?q={query}"
+        
+        try:
+            data = self._get_json(url)
+            if not data or not data.get('success'):
+                return []
+            
+            results = data.get('results', [])
+            torrents = []
+            
+            for item in results:
+                try:
+                    title = item.get('title', 'Unknown')
+                    infohash = item.get('infohash', '')
+                    if not infohash:
+                        continue
+                    
+                    size_bytes = item.get('size', 0)
+                    if size_bytes > 1073741824:
+                        size = f"{size_bytes / 1073741824:.2f} GB"
+                    elif size_bytes > 1048576:
+                        size = f"{size_bytes / 1048576:.2f} MB"
+                    else:
+                        size = f"{size_bytes / 1024:.2f} KB"
+                        
+                    seeders = item.get('seeders', 0)
+                    peers = item.get('leechers', 0)
+                    
+                    import urllib.parse
+                    safe_title = urllib.parse.quote(title)
+                    magnet_uri = f"magnet:?xt=urn:btih:{infohash}&dn={safe_title}"
+                    
+                    t = Torrent(
+                        name=title,
+                        size=size,
+                        seeders=seeders,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date=item.get('updatedAt', 'Unknown'),
+                        description_url=f"{self.info.url}/torrent/{item.get('id')}/" if item.get('id') else f"{self.info.url}/search?q={query}",
+                        magnet_uri=magnet_uri,
+                        category=Category.ALL,
+                    )
+                    torrents.append(t)
+                except:
+                    continue
+            
+            return torrents
+        except Exception as e:
+            print(f"SolidTorrents search error: {e}")
+            return []
+
+
+class PirateiroProvider(SearchProvider):
+    """Pirateiro provider."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="pirateiro",
+            name="Pirateiro",
+            url="https://pirateiro.io",
+            specialized_category=Category.ALL,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+            language="Multi",
+        )
+    
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search Pirateiro."""
+        from urllib.parse import quote
+        
+        url = f"{self.info.url}/search?query={quote(query)}"
+        
+        try:
+            html = self._get(url)
+            if not html:
+                return []
+            
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            rows = soup.select('table tr.odd, table tr.even')
+            if not rows:
+                rows = soup.select('table tr')
+            
+            torrents = []
+            pending_torrents = []
+            
+            for row in rows:
+                try:
+                    cols = row.find_all('td')
+                    if len(cols) < 3:
+                        continue
+                    
+                    title_link = cols[1].find('a')
+                    if not title_link:
+                        continue
+                    
+                    name = title_link.get_text(strip=True)
+                    desc_url = title_link.get('href', '')
+                    if not desc_url.startswith('http'):
+                        desc_url = self.info.url + desc_url
+                        
+                    badge_div = cols[2].select_one('.badge-div')
+                    seeds = 0
+                    peers = 0
+                    if badge_div:
+                        badges = badge_div.find_all('.badge')
+                        if len(badges) >= 2:
+                            s_text = badges[0].get_text(strip=True)
+                            p_text = badges[1].get_text(strip=True)
+                            if s_text.isdigit(): seeds = int(s_text)
+                            if p_text.isdigit(): peers = int(p_text)
+                            
+                    t = Torrent(
+                        name=name,
+                        size='Unknown',
+                        seeders=seeds,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date='Unknown',
+                        description_url=desc_url,
+                        magnet_uri='',
+                        category=Category.ALL,
+                    )
+                    pending_torrents.append(t)
+                except Exception:
+                    continue
+                    
+            # Do not fetch magnets here to avoid being rate limited
+            return pending_torrents
+            
+        except Exception as e:
+            print(f"Pirateiro search error: {e}")
+            return []
+
+    def resolve_download(self, torrent: Torrent) -> Optional[str]:
+        """Fetch magnet link on demand."""
+        if torrent.magnet_uri:
+            return torrent.magnet_uri
+            
+        try:
+            detail_html = self._get(torrent.description_url, timeout=20)
+            if not detail_html:
+                return None
+                
+            from bs4 import BeautifulSoup
+            import re
+            detail_soup = BeautifulSoup(detail_html, 'html.parser')
+            
+            magnet_elem = detail_soup.select_one('a[href^="magnet:"]')
+            if magnet_elem:
+                torrent.magnet_uri = magnet_elem.get('href', '')
+                
+            size_match = re.search(r'(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB|GiB|MiB|Gb|Mb))', detail_html, re.IGNORECASE)
+            if size_match:
+                torrent.size = size_match.group(1)
+                
+            return torrent.magnet_uri
+        except Exception as e:
+            print(f"Pirateiro resolve error: {e}")
+            
+        return None
+
+
+
+class Torrent911Provider(SearchProvider):
+    """Torrent911 provider."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="torrent911",
+            name="Torrent911",
+            url="https://www.torrent911.app",
+            specialized_category=Category.ALL,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+            language="French",
+        )
+    
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search Torrent911."""
+        try:
+            self._ensure_proxy()
+            
+            response = self.session.post(
+                f"{self.info.url}/search_torrent/",
+                data={'torrentSearch': query},
+                timeout=15,
+                verify=False
+            )
+            response.raise_for_status()
+            
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            torrents = []
+            pending_torrents = []
+            
+            result_items = soup.select('.banner-byx li')
+            
+            for item in result_items:
+                try:
+                    title_elem = item.select_one('.banner-title a')
+                    if not title_elem:
+                        continue
+                        
+                    name = title_elem.get('title') or title_elem.get_text(strip=True)
+                    desc_url = title_elem.get('href', '')
+                    if desc_url and not desc_url.startswith('http'):
+                        desc_url = self.info.url + desc_url
+                        
+                    t = Torrent(
+                        name=name,
+                        size='Unknown',
+                        seeders=0,
+                        peers=0,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date='Unknown',
+                        description_url=desc_url,
+                        magnet_uri='',
+                        category=Category.ALL,
+                    )
+                    pending_torrents.append(t)
+                except Exception:
+                    continue
+                    
+            pending_torrents = pending_torrents[:15]
+            
+            if pending_torrents:
+                self._fetch_magnets_parallel(pending_torrents)
+                
+            torrents = [t for t in pending_torrents if t.magnet_uri]
+            return torrents
+            
+        except Exception as e:
+            print(f"Torrent911 search error: {e}")
+            return []
+
+    def _fetch_magnets_parallel(self, torrents: List[Torrent]):
+        """Fetch magnet links and metadata from detail pages in parallel."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from bs4 import BeautifulSoup
+        
+        def fetch_detail(torrent: Torrent):
+            try:
+                detail_html = self._get(torrent.description_url, timeout=10)
+                if not detail_html:
+                    return
+                
+                detail_soup = BeautifulSoup(detail_html, 'html.parser')
+                
+                magnet_elem = detail_soup.select_one('a[href^="magnet:"]')
+                if magnet_elem:
+                    torrent.magnet_uri = magnet_elem.get('href', '')
+                
+                tds = detail_soup.find_all('td')
+                for td in tds:
+                    td_text = td.get_text(strip=True)
+                    if 'Poids' in td_text:
+                        next_td = td.find_next_sibling('td')
+                        if next_td:
+                            size_str = next_td.get_text(strip=True).upper()
+                            size_str = size_str.replace('GO', 'GB').replace('MO', 'MB').replace('KO', 'KB')
+                            torrent.size = size_str
+                    elif 'Seeders' in td_text:
+                        next_td = td.find_next_sibling('td')
+                        if next_td and next_td.get_text(strip=True).isdigit():
+                            torrent.seeders = int(next_td.get_text(strip=True))
+                    elif 'Leechers' in td_text:
+                        next_td = td.find_next_sibling('td')
+                        if next_td and next_td.get_text(strip=True).isdigit():
+                            torrent.peers = int(next_td.get_text(strip=True))
+            except Exception:
+                pass
+                
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(fetch_detail, t) for t in torrents]
+            for future in as_completed(futures, timeout=30):
+                try:
+                    future.result()
+                except:
+                    pass
+
+
+class NekobtProvider(SearchProvider):
+    """Nekobt.to provider."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="nekobt",
+            name="Nekobt",
+            url="https://nekobt.to",
+            specialized_category=Category.ANIME,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+        )
+
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search Nekobt."""
+        from urllib.parse import quote
+        
+        url = f"{self.info.url}/search?query={quote(query)}"
+        
+        try:
+            self._ensure_proxy()
+            html = self._get(url)
+            if not html:
+                return []
+                
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            tbody = soup.find('tbody')
+            if not tbody:
+                return []
+                
+            torrents = []
+            rows = tbody.find_all('tr')
+            
+            for row in rows:
+                try:
+                    cols = row.find_all('td')
+                    if len(cols) < 7:
+                        continue
+                        
+                    # Find title link
+                    title_a = cols[2].find('a', href=lambda h: h and h.startswith('/torrents/'))
+                    if not title_a:
+                        continue
+                        
+                    # Title text may contain nested spans, so grab the first meaningful text
+                    name_raw = title_a.get_text(separator='\n', strip=True)
+                    name = name_raw.split('\n')[0].strip() if name_raw else 'Unknown'
+                    
+                    desc_url = title_a['href']
+                    if not desc_url.startswith('http'):
+                        desc_url = self.info.url + desc_url
+                        
+                    # Magnet link
+                    magnet_a = row.find('a', href=lambda h: h and h.startswith('magnet:'))
+                    magnet_uri = magnet_a['href'] if magnet_a else ''
+                    
+                    # Size, Date, Seeders, Leechers are in fixed columns based on structure
+                    size = cols[4].get_text(strip=True) if len(cols) > 4 else 'Unknown'
+                    upload_date = cols[5].get_text(strip=True) if len(cols) > 5 else 'Unknown'
+                    
+                    seeders_str = cols[6].get_text(strip=True) if len(cols) > 6 else '0'
+                    leechers_str = cols[7].get_text(strip=True) if len(cols) > 7 else '0'
+                    
+                    seeders = int(''.join(filter(str.isdigit, seeders_str))) if any(c.isdigit() for c in seeders_str) else 0
+                    peers = int(''.join(filter(str.isdigit, leechers_str))) if any(c.isdigit() for c in leechers_str) else 0
+                    
+                    t = Torrent(
+                        name=name,
+                        size=size,
+                        seeders=seeders,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date=upload_date,
+                        description_url=desc_url,
+                        magnet_uri=magnet_uri,
+                        category=Category.ANIME,
+                    )
+                    torrents.append(t)
+                except Exception:
+                    continue
+                    
+            return torrents
+            
+        except Exception as e:
+            print(f"Nekobt search error: {e}")
+            return []
+
+
+
+
+
+class MyPornClubProvider(SearchProvider):
+    """MyPorn.Club provider."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="mypornclub",
+            name="MyPorn.Club",
+            url="https://myporn.club",
+            specialized_category=Category.PORN,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+        )
+
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search MyPorn.Club."""
+        from urllib.parse import quote
+        
+        url = f"{self.info.url}/s/{quote(query)}"
+        
+        try:
+            self._ensure_proxy()
+            html = self._get(url)
+            if not html:
+                return []
+                
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            torrents = []
+            elements = soup.select('.torrents_list .torrent_element')
+            
+            for el in elements:
+                try:
+                    # Find title and link
+                    title_a = el.select_one('.torrent_element_text_div a:not(.uploader_tel)')
+                    if not title_a:
+                        # Fallback for some structures
+                        title_a = el.select_one('a[href^="/t/"]')
+                        if not title_a:
+                            continue
+                            
+                    name = title_a.get('title') or title_a.get_text(strip=True)
+                    desc_url = title_a['href']
+                    if not desc_url.startswith('http'):
+                        desc_url = self.info.url + desc_url
+                        
+                    # Find stats (size, date, seeders, peers)
+                    info_div = el.select_one('.torrent_element_info')
+                    size = 'Unknown'
+                    upload_date = 'Unknown'
+                    seeders = 0
+                    peers = 0
+                    
+                    if info_div:
+                        # Upload date is in the first .teiv > a
+                        date_a = info_div.select_one('.teiv a')
+                        if date_a:
+                            upload_date = date_a.get_text(strip=True)
+                            
+                        # Seeders and leechers
+                        seeders_el = info_div.select_one('.teiv_seeders')
+                        if seeders_el and seeders_el.get_text(strip=True).isdigit():
+                            seeders = int(seeders_el.get_text(strip=True))
+                            
+                        leechers_el = info_div.select_one('.teiv_leechers')
+                        if leechers_el and leechers_el.get_text(strip=True).isdigit():
+                            peers = int(leechers_el.get_text(strip=True))
+                            
+                        # Size is usually the text of the .teiv following the [size]: span
+                        # Since they don't have unique classes, we can search for siblings
+                        teis_spans = info_div.select('.teis')
+                        for span in teis_spans:
+                            if '[size]' in span.get_text().lower():
+                                size_span = span.find_next_sibling('.teiv')
+                                if size_span:
+                                    size = size_span.get_text(strip=True)
+                                break
+                    
+                    t = Torrent(
+                        name=name,
+                        size=size,
+                        seeders=seeders,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date=upload_date,
+                        description_url=desc_url,
+                        magnet_uri='', # Fetched on demand
+                        category=Category.PORN,
+                    )
+                    torrents.append(t)
+                except Exception:
+                    continue
+                    
+            return torrents
+            
+        except Exception as e:
+            print(f"MyPornClub search error: {e}")
+            return []
+
+    def resolve_download(self, torrent: Torrent) -> Optional[str]:
+        """Fetch magnet from detail page if possible."""
+        if torrent.magnet_uri:
+            return torrent.magnet_uri
+            
+        if not torrent.description_url:
+            return None
+            
+        try:
+            html = self._get(torrent.description_url, timeout=10)
+            if not html:
+                return None
+                
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            magnet_elem = soup.find('a', href=lambda h: h and h.startswith('magnet:'))
+            if magnet_elem:
+                torrent.magnet_uri = magnet_elem['href']
+                return torrent.magnet_uri
+                
+        except Exception:
+            pass
+            
+        return None
+
+
+class ExttoProvider(SearchProvider):
+    """Extto.org provider."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="extto",
+            name="Extto",
+            url="https://extto.org",
+            specialized_category=Category.ALL,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=True,
+        )
+
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search Extto."""
+        from urllib.parse import quote
+        
+        url = f"{self.info.url}/browse/?q={quote(query)}"
+        
+        try:
+            self._ensure_proxy()
+            html = self._get(url)
+            if not html:
+                return []
+                
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            table = soup.find('table', class_='search-table')
+            if not table:
+                return []
+                
+            tbody = table.find('tbody')
+            if not tbody:
+                return []
+                
+            torrents = []
+            rows = tbody.find_all('tr')
+            
+            for row in rows:
+                try:
+                    cols = row.find_all('td')
+                    if len(cols) < 6:
+                        continue
+                        
+                    title_a = cols[0].find('a', href=lambda h: h and '/post-detail/' in h)
+                    if not title_a:
+                        continue
+                        
+                    name = title_a.get_text(strip=True)
+                    desc_url = title_a['href']
+                    if not desc_url.startswith('http'):
+                        desc_url = self.info.url + desc_url
+                        
+                    magnet_a = cols[0].find('a', href=lambda h: h and h.startswith('magnet:'))
+                    magnet_uri = magnet_a['href'] if magnet_a else ''
+                    
+                    size = cols[1].get_text(strip=True).replace('\xa0', ' ')
+                    upload_date = cols[2].get_text(strip=True)
+                    
+                    seeders_str = cols[4].get_text(strip=True)
+                    leechers_str = cols[5].get_text(strip=True)
+                    
+                    seeders = int(''.join(filter(str.isdigit, seeders_str))) if any(c.isdigit() for c in seeders_str) else 0
+                    peers = int(''.join(filter(str.isdigit, leechers_str))) if any(c.isdigit() for c in leechers_str) else 0
+                    
+                    t = Torrent(
+                        name=name,
+                        size=size,
+                        seeders=seeders,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date=upload_date,
+                        description_url=desc_url,
+                        magnet_uri=magnet_uri,
+                        category=Category.ALL,
+                    )
+                    torrents.append(t)
+                except Exception:
+                    continue
+                    
+            return torrents
+            
+        except Exception as e:
+            print(f"Extto search error: {e}")
+            return []
+
+
+class DmhyProvider(SearchProvider):
+    """share.dmhy.org provider."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="dmhy",
+            name="DMHY",
+            url="https://share.dmhy.org",
+            specialized_category=Category.ANIME,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+            language="Chinese",
+        )
+
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search DMHY."""
+        from urllib.parse import quote
+        
+        url = f"{self.info.url}/topics/list?keyword={quote(query)}"
+        
+        try:
+            self._ensure_proxy()
+            html = self._get(url)
+            if not html:
+                return []
+                
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, 'html.parser')
+            table = soup.find('table', id='topic_list')
+            if not table:
+                return []
+                
+            tbody = table.find('tbody')
+            if not tbody:
+                return []
+                
+            torrents = []
+            rows = tbody.find_all('tr')
+            
+            for row in rows:
+                try:
+                    cols = row.find_all('td')
+                    if len(cols) < 7:
+                        continue
+                        
+                    title_td = cols[2]
+                    name = title_td.get_text(separator=' ', strip=True)
+                    if not name:
+                        continue
+                        
+                    title_a = title_td.find('a', target='_blank')
+                    desc_url = title_a['href'] if title_a else ''
+                    if desc_url and not desc_url.startswith('http'):
+                        desc_url = self.info.url + desc_url
+                        
+                    magnet_a = cols[3].find('a', href=lambda h: h and h.startswith('magnet:'))
+                    magnet_uri = magnet_a['href'] if magnet_a else ''
+                    
+                    # DMHY sometimes repeats the date in a hidden span
+                    upload_date_raw = cols[0].get_text(separator='|', strip=True)
+                    upload_date = upload_date_raw.split('|')[0].strip()
+                    
+                    size = cols[4].get_text(strip=True)
+                    
+                    seeders_str = cols[5].get_text(strip=True)
+                    leechers_str = cols[6].get_text(strip=True)
+                    
+                    seeders = int(''.join(filter(str.isdigit, seeders_str))) if any(c.isdigit() for c in seeders_str) else 0
+                    peers = int(''.join(filter(str.isdigit, leechers_str))) if any(c.isdigit() for c in leechers_str) else 0
+                    
+                    t = Torrent(
+                        name=name,
+                        size=size,
+                        seeders=seeders,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date=upload_date,
+                        description_url=desc_url,
+                        magnet_uri=magnet_uri,
+                        category=Category.ANIME,
+                    )
+                    torrents.append(t)
+                except Exception:
+                    continue
+                    
+            return torrents
+            
+        except Exception as e:
+            print(f"DMHY search error: {e}")
+            return []
+
+
+class ZamundaRipProvider(SearchProvider):
+    """Zamunda.RIP provider (uses JSON API)."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="zamundarip",
+            name="Zamunda.RIP",
+            url="https://zamunda.rip",
+            specialized_category=Category.ALL,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+            language="Bulgarian",
+        )
+
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search Zamunda.RIP via JSON API."""
+        from urllib.parse import quote
+        import json
+        
+        url = f"{self.info.url}/api/torrents?q={quote(query)}"
+        
+        try:
+            self._ensure_proxy()
+            response = self._get(url)
+            if not response:
+                return []
+                
+            data = json.loads(response)
+            if not isinstance(data, list):
+                return []
+                
+            torrents = []
+            for item in data:
+                try:
+                    name = item.get('title', 'Unknown')
+                    magnet_uri = item.get('link', '')
+                    size = item.get('size', 'Unknown')
+                    
+                    # They don't provide seeders/leechers in the basic API
+                    seeders = 0
+                    peers = 0
+                    
+                    t = Torrent(
+                        name=name,
+                        size=size,
+                        seeders=seeders,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date='Unknown',
+                        description_url=f"{self.info.url}/download?id={item.get('external_id', '')}",
+                        magnet_uri=magnet_uri,
+                        category=Category.ALL,
+                    )
+                    torrents.append(t)
+                except Exception:
+                    continue
+                    
+            return torrents
+            
+        except Exception as e:
+            print(f"Zamunda.RIP search error: {e}")
+            return []
+
+
+class GogGamesProvider(SearchProvider):
+    """GOG-Games.to - Free DRM-free GOG games."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="gog_games",
+            name="GOG Games",
+            url="https://gog-games.to",
+            specialized_category=Category.GAMES,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            safety_reason="DRM-free GOG installers",
+            enabled_by_default=False,
+            language="Multi",
+        )
+        
+    def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
+        from urllib.parse import quote
+        import datetime
+        import json
+        
+        url = f"{self.info.url}/search?q={quote(query)}"
+        torrents = []
+        try:
+            resp = self._get_json(url, timeout=15)
+            if not resp or 'data' not in resp:
+                return torrents
+                
+            for game in resp.get('data', []):
+                infohash = game.get('infohash')
+                if not infohash:
+                    # Skip games that don't have a torrent/magnet infohash
+                    continue
+                    
+                title = game.get('title', 'Unknown')
+                slug = game.get('slug', '')
+                
+                # We construct the magnet link from the infohash
+                magnet_uri = f"magnet:?xt=urn:btih:{infohash}&dn={quote(title)}"
+                
+                # Upload date from release_timestamp
+                timestamp = game.get('release_timestamp')
+                upload_date = 'Unknown'
+                if timestamp:
+                    try:
+                        upload_date = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
+                
+                t = Torrent(
+                    name=title,
+                    size="Unknown",  # API doesn't provide size
+                    seeders=-1,      # Magnet link, DHT handles this
+                    peers=-1,
+                    provider_id=self.info.id,
+                    provider_name=self.info.name,
+                    upload_date=upload_date,
+                    description_url=f"{self.info.url}/game/{slug}" if slug else self.info.url,
+                    magnet_uri=magnet_uri,
+                    category=Category.GAMES,
+                )
+                torrents.append(t)
+        except Exception as e:
+            print(f"GOG Games search error: {e}")
+            
+        return torrents
+
+
+class PcGamesTorrentsProvider(SearchProvider):
+    """PCGamesTorrents.com - Free PC Games."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="pcgamestorrents",
+            name="PCGamesTorrents",
+            url="https://pcgamestorrents.com",
+            specialized_category=Category.GAMES,
+            safety_status=SearchProviderSafetyStatus.UNSAFE,
+            safety_reason="Contains cracked games - use at your own risk",
+            enabled_by_default=False,
+            language="English",
+        )
+        
+    def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
+        from urllib.parse import quote
+        
+        url = f"{self.info.url}/?s={quote(query)}"
+        torrents = []
+        try:
+            html = self._get(url, timeout=20)
+            if not html:
+                return torrents
+                
+            soup = BeautifulSoup(html, 'html.parser')
+            items = soup.select('article, .post, .item, .uk-article')
+            
+            seen_urls = set()
+            for item in items:
+                link = item.select_one('h1 a, h2 a, h3 a, a.uk-link-reset, a[rel="bookmark"]')
+                if not link:
+                    continue
+                    
+                title = link.get_text(strip=True)
+                href = link.get('href', '')
+                
+                if not href or href in seen_urls:
+                    continue
+                seen_urls.add(href)
+                
+                t = Torrent(
+                    name=title,
+                    size="Unknown",
+                    seeders=-1,
+                    peers=-1,
+                    provider_id=self.info.id,
+                    provider_name=self.info.name,
+                    upload_date='Unknown',
+                    description_url=href,
+                    magnet_uri=href,  # Need to resolve
+                    category=Category.GAMES,
+                )
+                torrents.append(t)
+        except Exception as e:
+            print(f"PCGamesTorrents search error: {e}")
+            
+        return torrents
+        
+    def resolve_download(self, torrent: Torrent) -> Optional[str]:
+        """Resolve the final magnet link through bluemedia URL shortener."""
+        import re
+        
+        url = torrent.magnet_uri
+        if not url or url.startswith('magnet:'):
+            return url
+            
+        try:
+            # 1. Fetch detail page
+            html = self._get(url, timeout=20)
+            if not html:
+                return url
+                
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # 2. Find bluemedia URL
+            bluemedia_url = None
+            for a in soup.find_all('a'):
+                href = a.get('href', '')
+                if 'urlbluemedia.shop/url-generator.php' in href:
+                    bluemedia_url = href
+                    break
+                    
+            if not bluemedia_url:
+                # Try fallback for generic magnet links on page
+                for a in soup.find_all('a'):
+                    if 'magnet:' in a.get('href', ''):
+                        return a.get('href')
+                return url
+                
+            # 3. Fetch bluemedia url
+            headers = {'Referer': url}
+            try:
+                resp = self.session.get(bluemedia_url, headers=headers, timeout=15, verify=False)
+                bm_html = resp.text
+            except Exception:
+                return url
+                
+            # 4. Extract and decode string
+            m = re.search(r"let [a-zA-Z0-9_]+='([a-zA-Z0-9]+)',[a-zA-Z0-9_]+='';for\(i=", bm_html)
+            if not m:
+                return url
+                
+            encoded_str = m.group(1)
+            decoded = ""
+            length = len(encoded_str)
+            i = int(length / 2) - 5
+            while i >= 0:
+                decoded += encoded_str[i]
+                i -= 2
+            i = int(length / 2) + 4
+            while i < length:
+                decoded += encoded_str[i]
+                i += 2
+                
+            # 5. Fetch get-url.php
+            get_url = "https://magnet.urlbluemedia.shop/get-url.php?url=" + decoded
+            try:
+                resp2 = self.session.get(get_url, headers=headers, timeout=15, verify=False)
+                get_html = resp2.text
+            except Exception:
+                return url
+                
+            # 6. Extract magnet
+            magnet_m = re.search(r"let magnetLink\s*=\s*[\"'](magnet:\?.*?)[\"']", get_html)
+            if magnet_m:
+                return magnet_m.group(1)
+                
+            magnet_m = re.search(r"value=[\"'](magnet:\?.*?)[\"']", get_html)
+            if magnet_m:
+                return magnet_m.group(1)
+                
+        except Exception as e:
+            print(f"PCGamesTorrents resolve error: {e}")
+            
+        return url
+
+
+class FileMoodProvider(SearchProvider):
+    """FileMood provider - torrent search engine with info hashes in URLs."""
+    
+    @property
+    def info(self) -> SearchProviderInfo:
+        return SearchProviderInfo(
+            id="filemood",
+            name="FileMood",
+            url="https://filemood.com",
+            specialized_category=Category.ALL,
+            safety_status=SearchProviderSafetyStatus.SAFE,
+            enabled_by_default=False,
+        )
+        
+    def _ensure_proxy(self):
+        """Bypass proxy for FileMood as it has strict Cloudflare and blocks many proxies."""
+        pass
+    
+    def search(self, query: str, category: Category) -> List[Torrent]:
+        """Search FileMood for torrents."""
+        import re
+        import urllib.parse
+        
+        encoded_query = urllib.parse.quote(query)
+        url = f"{self.info.url}/result?q={encoded_query}"
+        
+        try:
+            html = self._get(url)
+            if not html:
+                return []
+            
+            # Check if we got a Cloudflare challenge page
+            if 'One moment...' in html or len(html) < 5000:
+                print("FileMood: Got Cloudflare challenge, retrying...")
+                return []
+            
+            soup = BeautifulSoup(html, 'html.parser')
+            title_cells = soup.select('td.dn-title')
+            
+            if not title_cells:
+                return []
+            
+            torrents = []
+            for td in title_cells:
+                try:
+                    row = td.find_parent('tr')
+                    if not row:
+                        continue
+                    
+                    # Title and URL
+                    title_link = td.select_one('p.filedir a')
+                    if not title_link:
+                        continue
+                    
+                    name = title_link.get_text(strip=True)
+                    href = title_link.get('href', '')
+                    desc_url = self.info.url + href if not href.startswith('http') else href
+                    
+                    # Extract info hash from URL (40 hex chars before .html)
+                    hash_match = re.search(r'-([a-fA-F0-9]{40})\.html$', href)
+                    if not hash_match:
+                        continue
+                    
+                    info_hash = hash_match.group(1)
+                    
+                    # Build magnet URI from info hash
+                    encoded_name = urllib.parse.quote(name)
+                    trackers = [
+                        "udp://tracker.opentrackr.org:1337/announce",
+                        "udp://open.stealth.si:80/announce",
+                        "udp://tracker.torrent.eu.org:451/announce",
+                        "udp://tracker.openbittorrent.com:6969/announce",
+                        "udp://exodus.desync.com:6969/announce",
+                        "udp://open.demonii.com:1337/announce",
+                        "udp://tracker.tiny-vps.com:6969/announce",
+                        "udp://tracker.moeking.me:6969/announce",
+                        "udp://explodie.org:6969/announce",
+                    ]
+                    tr_params = "&tr=".join([urllib.parse.quote(t) for t in trackers])
+                    magnet_uri = f"magnet:?xt=urn:btih:{info_hash}&dn={encoded_name}&tr={tr_params}"
+                    
+                    # Seeds/Peers from td.dn-status
+                    seeds = 0
+                    peers = 0
+                    status_cell = row.select_one('td.dn-status b')
+                    if status_cell:
+                        sp_text = status_cell.get_text(strip=True)
+                        sp_match = re.match(r'(\d+)\s*/\s*(\d+)', sp_text)
+                        if sp_match:
+                            seeds = int(sp_match.group(1))
+                            peers = int(sp_match.group(2))
+                    
+                    # Size from td.dn-size
+                    size = 'Unknown'
+                    size_cell = row.select_one('td.dn-size b')
+                    if size_cell:
+                        size = size_cell.get_text(strip=True)
+                    
+                    t = Torrent(
+                        name=name,
+                        size=size,
+                        seeders=seeds,
+                        peers=peers,
+                        provider_id=self.info.id,
+                        provider_name=self.info.name,
+                        upload_date='Unknown',
+                        description_url=desc_url,
+                        magnet_uri=magnet_uri,
+                        info_hash=info_hash,
+                        category=Category.ALL,
+                    )
+                    torrents.append(t)
+                except Exception:
+                    continue
+            
+            return torrents
+        except Exception as e:
+            print(f"FileMood search error: {e}")
+            return []

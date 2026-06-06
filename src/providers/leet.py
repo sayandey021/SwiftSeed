@@ -14,12 +14,6 @@ class LeetProvider(SearchProvider):
         super().__init__()
         self.mirrors = [
             "https://www.1377x.to",
-            "https://1377x.to",
-            "https://1337xx.to",
-            "https://1337x.to",
-            "https://1337x.st",
-            "https://x1337x.ws",
-            "https://x1337x.eu",
         ]
         self._current_mirror = self.mirrors[0]
     
@@ -54,15 +48,19 @@ class LeetProvider(SearchProvider):
         
         cat_slug = cat_map.get(category)
         
+        import urllib.parse
+        
         # Loop through mirrors until one works
         for mirror in self.mirrors:
             self._current_mirror = mirror
             
-            # Using /category-search/ if a category is specified
+            encoded_query = urllib.parse.quote_plus(query)
+            
+            # Using /search/?q=...
             if cat_slug:
-                url = f"{self.info.url}/category-search/{query}/{cat_slug}/1/"
+                url = f"{self.info.url}/search/?q={encoded_query}&catname={cat_slug}"
             else:
-                url = f"{self.info.url}/search/{query}/1/"
+                url = f"{self.info.url}/search/?q={encoded_query}"
             
             try:
                 html = self._get(url)
@@ -102,7 +100,10 @@ class LeetProvider(SearchProvider):
             
             name = name_links[1].get_text(strip=True)
             torrent_path = name_links[1].get('href', '')
-            description_url = f"{self.info.url}{torrent_path}"
+            if torrent_path.startswith('http'):
+                description_url = torrent_path
+            else:
+                description_url = f"{self.info.url}{torrent_path}"
             
             # Get seeders
             seeders_cell = row.select_one('td.seeds')

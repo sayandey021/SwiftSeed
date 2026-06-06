@@ -170,15 +170,15 @@ class DownloadsView(ft.Container):
                 self._refresh_list()
                 return
             
-            # Show immediately in list with "Loading Metadata" status
-            download.visible = True
-            self._refresh_list() # Show it immediately with loading status
+            # Hide from list while loading metadata
+            download.visible = False
+            self._refresh_list()
                 
             def cancel_loading(e=None):
                 loading_dlg.open = False
                 self._page.update()
-                # Remove the download since we cancelled
-                if getattr(download, 'is_newly_added', False):
+                # Only remove if it's a new download (not a duplicate of an existing one)
+                if getattr(download, 'is_newly_added', False) and not getattr(download, 'is_duplicate', False):
                     self.torrent_manager.remove_download(download.id, delete_files=True)
 
             loading_dlg = ft.AlertDialog(
@@ -263,7 +263,9 @@ class DownloadsView(ft.Container):
                         if len(download.files) == 0:
                             loading_dlg.open = False
                             self._page.update()
-                            self.torrent_manager.remove_download(download.id)
+                            # Only remove if it's not a duplicate
+                            if not getattr(download, 'is_duplicate', False):
+                                self.torrent_manager.remove_download(download.id)
                             self._show_snack("Failed to retrieve file list. The torrent metadata may be corrupted.")
                             return
 
@@ -305,13 +307,13 @@ class DownloadsView(ft.Container):
                             
                             # Resume download now that user confirmed
                             self.torrent_manager.resume_download(download.id)
-                            # Already visible, just refresh
+                            download.visible = True
                             self._refresh_list()
                             self._show_snack("Download started!")
 
                         def on_cancel(e):
-                            # Only remove if it's a new download
-                            if getattr(download, 'is_newly_added', False):
+                            # Only remove if it's a new download (not a duplicate)
+                            if getattr(download, 'is_newly_added', False) and not getattr(download, 'is_duplicate', False):
                                 self.torrent_manager.remove_download(download.id, delete_files=True)
                             download_dlg.open = False
                             self._page.update()
@@ -336,7 +338,7 @@ class DownloadsView(ft.Container):
                         def on_cancel_retry(e):
                             retry_dlg.open = False
                             self._page.update()
-                            if getattr(download, 'is_newly_added', False):
+                            if getattr(download, 'is_newly_added', False) and not getattr(download, 'is_duplicate', False):
                                 self.torrent_manager.remove_download(download.id, delete_files=True)
                             self._show_snack("Download cancelled")
                         
@@ -1012,8 +1014,8 @@ class DownloadsView(ft.Container):
             self._show_snack("❌ Failed to add magnet link")
             return
         
-        # Check if it's a duplicate that's already visible
-        if getattr(download, 'visible', True):
+        # Check if it's a duplicate that's already in downloads
+        if getattr(download, 'is_duplicate', False) or (not getattr(download, 'is_newly_added', False) and getattr(download, 'visible', True)):
             self._show_snack("ℹ️ Torrent already exists in downloads")
             return
         
@@ -1026,7 +1028,9 @@ class DownloadsView(ft.Container):
         def cancel_loading(e=None):
             loading_dlg.open = False
             self._page.update()
-            self.torrent_manager.remove_download(download.id, delete_files=True)
+            # Only remove if it's a new download (not a duplicate of an existing one)
+            if not getattr(download, 'is_duplicate', False):
+                self.torrent_manager.remove_download(download.id, delete_files=True)
 
         loading_dlg = ft.AlertDialog(
             title=ft.Text("Loading Torrent Info"),
@@ -1099,7 +1103,9 @@ class DownloadsView(ft.Container):
                     if len(download.files) == 0:
                         loading_dlg.open = False
                         self._page.update()
-                        self.torrent_manager.remove_download(download.id)
+                        # Only remove if it's not a duplicate
+                        if not getattr(download, 'is_duplicate', False):
+                            self.torrent_manager.remove_download(download.id)
                         self._show_snack("Failed to retrieve file list.")
                         return
 
@@ -1137,7 +1143,8 @@ class DownloadsView(ft.Container):
                         self._show_snack("Download started!")
 
                     def on_cancel(e):
-                        if not download.visible:
+                        # Only remove if it's NOT a duplicate/visible download
+                        if not download.visible and not getattr(download, 'is_duplicate', False):
                             self.torrent_manager.remove_download(download.id, delete_files=True)
                         download_dlg.open = False
                         self._page.update()
@@ -1151,7 +1158,9 @@ class DownloadsView(ft.Container):
                 else:
                     loading_dlg.open = False
                     self._page.update()
-                    self.torrent_manager.remove_download(download.id, delete_files=True)
+                    # Only remove if it's not a duplicate
+                    if not getattr(download, 'is_duplicate', False):
+                        self.torrent_manager.remove_download(download.id, delete_files=True)
                     self._show_snack("Unable to retrieve torrent metadata.")
                     
             except Exception as e:

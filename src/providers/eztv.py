@@ -1,14 +1,19 @@
-"""EZTV search provider."""
+"""EZTV search provider using the JSON API."""
 
+import re
+from datetime import datetime
 from typing import List
-from bs4 import BeautifulSoup
 from models.torrent import Torrent
 from models.category import Category
 from providers.base import SearchProvider, SearchProviderInfo, SearchProviderSafetyStatus
 
 
 class EztvProvider(SearchProvider):
-    """EZTV torrent search provider (specializes in TV Series)."""
+    """EZTV torrent search provider (specializes in TV Series).
+    
+    Uses the EZTV JSON API at /api/get-torrents since the HTML pages
+    are behind Cloudflare protection.
+    """
     
     @property
     def info(self) -> SearchProviderInfo:
@@ -22,80 +27,124 @@ class EztvProvider(SearchProvider):
             language="English",
         )
     
-    def search(self, query: str, category: Category) -> List[Torrent]:
-        """Search EZTV for torrents."""
-        url = f"{self.info.url}/search/{query}"
+    def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
+        """Search EZTV for torrents using the JSON API.
         
-        try:
-            html = self._get(url)
-            if not html:
-                return []
+        The API doesn't support text search directly, so we fetch
+        multiple pages and filter results client-side by query terms.
+        """
+        query_terms = query.lower().split()
+        if not query_terms:
+            return []
+        
+        torrents = []
+        # Fetch multiple API pages and filter client-side
+        # Each API page has up to 100 results; scan enough to find matches
+        max_api_pages = 15
+        results_per_page = 100
+        
+        for api_page in range(1, max_api_pages + 1):
+            url = f"{self.info.url}/api/get-torrents?limit={results_per_page}&page={api_page}"
             
-            soup = BeautifulSoup(html, 'html.parser')
-            rows = soup.select('tr.forum_header_border')
-            
-            torrents = []
-            for row in rows:
-                try:
-                    name_cell = row.select_one('td.forum_thread_post a.epinfo')
-                    if not name_cell:
+            try:
+                data = self._get_json(url)
+                if not data:
+                    break
+                
+                api_torrents = data.get('torrents', [])
+                if not api_torrents:
+                    break
+                
+                for t_data in api_torrents:
+                    title = t_data.get('title', '')
+                    if not title:
                         continue
                     
-                    name = name_cell.get_text(strip=True)
-                    desc_url = self.info.url + name_cell.get('href', '')
+                    # Client-side filter: all query terms must appear in the title
+                    title_lower = title.lower()
+                    if not all(term in title_lower for term in query_terms):
+                        continue
                     
-                    magnet_link = row.select_one('a.magnet')
-                    magnet_uri = magnet_link.get('href', '') if magnet_link else ''
+                    # Extract magnet
+                    magnet_uri = t_data.get('magnet_url', '')
+                    if not magnet_uri:
+                        # Construct from hash if available
+                        info_hash = t_data.get('hash', '')
+                        if info_hash:
+                            magnet_uri = f"magnet:?xt=urn:btih:{info_hash}&dn={title}"
                     
-                    # Extract size from title attribute which contains it in parentheses
-                    # e.g., "Episode Name [eztv] (1.32 GB)"
-                    size = 'Unknown'
-                    title_attr = name_cell.get('title', '')
-                    if title_attr and '(' in title_attr and ')' in title_attr:
-                        # Extract the size from parentheses at the end
-                        import re
-                        size_match = re.search(r'\((\d+\.?\d*\s*(?:GB|MB|KB|TB))\)\s*$', title_attr, re.IGNORECASE)
-                        if size_match:
-                            size = size_match.group(1)
+                    if not magnet_uri:
+                        continue
                     
-                    # Fallback: try to get size from table cells based on column count
-                    if size == 'Unknown':
-                        cells = row.find_all('td')
-                        if len(cells) >= 6:
-                            # First row has 6 cells, size is at index 3
-                            size_cell = cells[3] if len(cells) > 3 else None
-                        elif len(cells) >= 5:
-                            # Other rows have 5 cells, size is at index 2
-                            size_cell = cells[2] if len(cells) > 2 else None
-                        else:
-                            size_cell = None
-                        
-                        if size_cell:
-                            raw_size = size_cell.get_text(strip=True)
-                            # Validate it looks like a size (contains MB, GB, etc.)
-                            if any(unit in raw_size.upper() for unit in ['MB', 'GB', 'KB', 'TB']):
-                                size = raw_size
+                    # Size
+                    try:
+                        size_bytes = int(t_data.get('size_bytes', 0) or 0)
+                    except (ValueError, TypeError):
+                        size_bytes = 0
+                    size = self._format_size(size_bytes) if size_bytes else 'Unknown'
                     
-                    seeds_cell = row.select_one('td.forum_thread_post font[color="green"]')
-                    seeds = int(seeds_cell.get_text(strip=True)) if seeds_cell else 0
+                    # Seeds / Peers
+                    try:
+                        seeds = int(t_data.get('seeds', 0) or 0)
+                    except (ValueError, TypeError):
+                        seeds = 0
+                    try:
+                        peers = int(t_data.get('peers', 0) or 0)
+                    except (ValueError, TypeError):
+                        peers = 0
                     
-                    t = Torrent(
-                        name=name,
+                    # Date
+                    date_unix = t_data.get('date_released_unix', 0)
+                    upload_date = 'Unknown'
+                    if date_unix:
+                        try:
+                            upload_date = datetime.fromtimestamp(int(date_unix)).strftime('%Y-%m-%d')
+                        except (ValueError, OSError):
+                            pass
+                    
+                    # Description URL
+                    torrent_id = t_data.get('id', '')
+                    desc_url = f"{self.info.url}/ep/{torrent_id}" if torrent_id else self.info.url
+                    
+                    torrent = Torrent(
+                        name=title,
                         size=size,
                         seeders=seeds,
-                        peers=0,
+                        peers=peers,
                         provider_id=self.info.id,
                         provider_name=self.info.name,
-                        upload_date='Unknown',
+                        upload_date=upload_date,
                         description_url=desc_url,
                         magnet_uri=magnet_uri,
                         category=Category.TV,
                     )
-                    torrents.append(t)
-                except:
-                    continue
-            
-            return torrents
-        except Exception as e:
-            print(f"EZTV search error: {e}")
-            return []
+                    torrents.append(torrent)
+                
+                # Stop early if we already have enough results
+                if len(torrents) >= 40:
+                    break
+                    
+                # Stop if this was the last page of results
+                total = data.get('torrents_count', 0)
+                if api_page * results_per_page >= total:
+                    break
+                    
+            except Exception as e:
+                print(f"EZTV API page {api_page} error: {e}")
+                break
+        
+        return torrents
+    
+    @staticmethod
+    def _format_size(size_bytes: int) -> str:
+        """Format bytes into human-readable size string."""
+        if size_bytes <= 0:
+            return 'Unknown'
+        
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        size = float(size_bytes)
+        for unit in units:
+            if size < 1024:
+                return f"{size:.2f} {unit}"
+            size /= 1024
+        return f"{size:.2f} PB"
