@@ -1,9 +1,64 @@
 # Release Notes
 
-## Version 2.5 - April 2026
+## Version 2.1.0
 
 ### 🎯 Highlights
-SwiftSeed v2.5 introduces a major cleanup of the project structure for better maintainability and a professional look. This release focuses on repository organization, enhanced ignoring of temporary files, and a more stable build process.
+SwiftSeed v2.1.0 brings a massive expansion of supported providers across all categories, significant UI polish, and important bug fixes.
+
+### ✨ New Providers
+- **General**: Extto, FileMood, MagnetDL, Snowfl, SolidTorrent, Pirateiro, Torrent991, Zamunda.RIP
+- **Anime**: DMHY, Nekobt
+- **Games**: Byrutor, GOG Games, PCGamesTorrent
+- **Adult**: MyPorn.Club
+
+### 🎨 UI/UX Improvements
+- Completely refreshed File Associations tab UI with polished toggle switches.
+- Improved Provider tab connection check button UI and implemented new filter UI.
+- General UI/UX improvements, including the new 'Version History' window in the About page.
+- Added 'Rate the App' button to the About page.
+- Fixed side bar icon layout issues.
+
+### 🐛 Bug Fixes & Adjustments
+- Fixed and updated existing providers: Cpasbien, Kickass Torrents, YTS, Anerina, Skidrow Repack, FTUApps, VSTorrents, Academic Torrents.
+- Fixed fetch metadata UI bug in the Download tab.
+- Moved Proxy settings to the Advanced Settings tab for better organization.
+- Resolved settings JSON syntax errors.
+
+---
+
+## Version 2.0.7
+
+### ✨ Improvements
+- UI improvements and polish in Settings.
+- Improved background image section UI in the General tab.
+- Fixed background fade slider to show values in percentage.
+- Added file associations toggles.
+
+### 🐛 Bug Fixes
+- Fixed metadata fetching bugs.
+- Updated Cpasbien provider URL to .cc
+
+---
+
+## Version 2.0.6
+
+### ✨ New Features
+- Implemented advanced speed limits.
+- Added torrent max connections settings.
+
+---
+
+## Version 2.0.5
+
+### 🎯 Highlights
+- Base framework for new SwiftSeed UI.
+- Migrated to Flet based interface for a modern look and feel.
+
+---
+## Version 2.0.0 - April 2026
+
+### 🎯 Highlights
+SwiftSeed v2.0.0 introduces a major cleanup of the project structure for better maintainability and a professional look. This release focuses on repository organization, enhanced ignoring of temporary files, and a more stable build process.
 
 ### ⚡ Major Features & Improvements
 

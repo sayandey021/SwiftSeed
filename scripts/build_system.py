@@ -144,9 +144,9 @@ def patch_msix_flet_exes(pkg_root):
         subprocess.run([rcedit_path, flet_exe, "--set-icon", icon_path],
                        capture_output=True, text=True)
         # Versions
-        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.0.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.1.0"],
                        capture_output=True, text=True)
-        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.0.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.1.0"],
                        capture_output=True, text=True)
         # String fields
         for key, val in version_strings.items():
@@ -165,9 +165,10 @@ def interactive_menu():
         print("  [3] Build EVERYTHING (Portable + Installer)")
         print("  [4] Build MSIX Package")
         print("  [5] Bump Version")
-        print("  [6] Exit\n")
+        print("  [6] Update Version History in App")
+        print("  [7] Exit\n")
         
-        choice = input("Enter your choice (1-6): ").strip()
+        choice = input("Enter your choice (1-7): ").strip()
         if choice == '1':
             build_portable()
         elif choice == '2':
@@ -179,12 +180,72 @@ def interactive_menu():
             build_portable()
             build_msix()
         elif choice == '5':
-            new_ver = input("Enter new version (e.g. 2.0.8): ").strip()
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            version_file = os.path.join(base_dir, "version_info.txt")
+            current_version = "Unknown"
+            if os.path.exists(version_file):
+                import re
+                with open(version_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+                m = re.search(r"StringStruct\(u'FileVersion',\s*u'([\d\.]+)'\)", content)
+                if m:
+                    current_version = m.group(1)
+            
+            print(f"\nCurrent Version: {current_version}")
+            print("  [1] Auto-increment patch version")
+            print("  [2] Manual version input")
+            print("  [3] Back to main menu")
+            sub_choice = input("Select option (1-3): ").strip()
+            
+            new_ver = ""
+            if sub_choice == '1' and current_version != "Unknown":
+                parts = current_version.split('.')
+                if len(parts) >= 3:
+                    parts[2] = str(int(parts[2]) + 1)
+                    new_ver = ".".join(parts[:3])
+                    print(f"Auto-updating to version: {new_ver}")
+                else:
+                    print("Could not parse current version for auto-increment.")
+            elif sub_choice == '2' or (sub_choice == '1' and current_version == "Unknown"):
+                new_ver = input("Enter new version (e.g. 2.0.8): ").strip()
+            elif sub_choice == '3':
+                continue
+            else:
+                print("Invalid choice.")
+                
             if new_ver:
-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 bump_script = os.path.join(base_dir, "scripts", "bump_version.py")
                 subprocess.run([sys.executable, bump_script, new_ver])
         elif choice == '6':
+            print("\n  [1] Auto-update from RELEASE_NOTES.md")
+            print("  [2] Manual input (New Version)")
+            print("  [3] Edit previous version log")
+            print("  [4] Back to main menu")
+            sub_choice = input("Select option (1-4): ").strip()
+
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            update_script = os.path.join(base_dir, "scripts", "update_version_history.py")
+            
+            if sub_choice == '1':
+                if os.path.exists(update_script):
+                    subprocess.run([sys.executable, update_script])
+                else:
+                    print(f"Script not found: {update_script}")
+            elif sub_choice == '2':
+                if os.path.exists(update_script):
+                    subprocess.run([sys.executable, update_script, "--manual"])
+                else:
+                    print(f"Script not found: {update_script}")
+            elif sub_choice == '3':
+                if os.path.exists(update_script):
+                    subprocess.run([sys.executable, update_script, "--edit"])
+                else:
+                    print(f"Script not found: {update_script}")
+            elif sub_choice == '4':
+                continue
+            else:
+                print("Invalid choice.")
+        elif choice == '7':
             break
         else:
             print("Invalid choice.")
