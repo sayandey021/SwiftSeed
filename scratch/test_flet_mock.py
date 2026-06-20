@@ -52,15 +52,16 @@ providers = provider_mgr.providers
 view = SettingsView(page, settings_mgr, download_mgr, providers, provider_mgr)
 
 # Build provider tab directly
-provider_tab = view._build_providers_tab()
+provider_tab = view._build_provider_settings()
 
 # Get dropdowns
-row = provider_tab.content.controls[3]
-cat_drop = row.controls[1]
-lang_drop = row.controls[2]
+advanced_filters = provider_tab.content.controls[4]  # type: ignore
+row = advanced_filters.content  # type: ignore
+cat_drop = row.controls[0]  # type: ignore
+lang_drop = row.controls[1]  # type: ignore
 
-prov_col = provider_tab.content.controls[7]
-print("Initial controls:", len(prov_col.controls))
+prov_col = provider_tab.content.controls[8]  # type: ignore
+print("Initial controls:", len(prov_col.controls))  # type: ignore
 
 class MockEvent:
     def __init__(self, control):

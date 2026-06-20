@@ -7,6 +7,7 @@ from .leet import LeetProvider
 from .torrents_csv import TorrentsCSVProvider
 from .yts import YtsProvider
 from .eztv import EztvProvider
+from .subsplease import SubsPleaseProvider
 from .additional import (
     AnimeToshoProvider,
     KnabenProvider,
@@ -135,6 +136,7 @@ def get_all_providers():
         ApacheTorrentProvider(),  # Apache Torrent - Movies/Series
         
         # === ANIME ===
+        SubsPleaseProvider(),  # Anime - SubsPlease (Official Subs, API-based)
         NyaaProvider(),  # Anime - Best for anime
         NekobtProvider(),  # Anime - nekobt.to
         DmhyProvider(),  # Anime - dmhy.org (Chinese)

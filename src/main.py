@@ -311,6 +311,30 @@ class TorrentSearchApp:
         self.providers = get_all_providers()
         debug_log(f"get_all_providers() returned {len(self.providers)} providers")
         
+        # Auto-enable new providers that have enabled_by_default=True
+        # This ensures that when a new provider is added to the codebase,
+        # existing users get it enabled automatically (if the author intended it).
+        known_providers = set(self.settings_manager.get('known_provider_ids', []))
+        current_enabled = self.settings_manager.get_enabled_providers()
+        all_current_ids = set(p.info.id for p in self.providers)
+        
+        if known_providers:
+            # Find truly NEW providers (not seen before)
+            new_provider_ids = all_current_ids - known_providers
+            if new_provider_ids:
+                newly_enabled = []
+                for p in self.providers:
+                    if p.info.id in new_provider_ids and p.info.enabled_by_default:
+                        if p.info.id not in current_enabled:
+                            current_enabled.append(p.info.id)
+                            newly_enabled.append(p.info.id)
+                if newly_enabled:
+                    self.settings_manager.set_enabled_providers(current_enabled)
+                    print(f"[OK] Auto-enabled new providers: {', '.join(newly_enabled)}")
+        
+        # Update the known providers list
+        self.settings_manager.set('known_provider_ids', list(all_current_ids))
+        
         # Apply saved provider URLs
         for provider in self.providers:
             # print(f"DEBUG: Processing provider {provider.info.id}")
@@ -1246,9 +1270,26 @@ class TorrentSearchApp:
         )
         self.about_view = self._build_about_view()
         
+        # Keep all views alive in a single Column, toggling visibility.
+        # This completely eliminates 100-300ms unmount/mount JSON serialization delays
+        # and prevents background threads from crashing on unmounted components.
+        self.main_views = [
+            self.search_view,
+            self.bookmarks_view,
+            self.history_view,
+            self.downloads_view,
+            self.settings_view,
+            self.about_view
+        ]
+        
+        for i, view in enumerate(self.main_views):
+            view.visible = (i == 0)
+            # Ensure every view is instructed to fill the parent space
+            view.expand = True
+        
         # Main Layout Container
         self.body = ft.Container(
-            content=self.search_view,
+            content=ft.Column(list(self.main_views), expand=True, spacing=0),  # type: ignore
             expand=True,
             padding=20,
         )
@@ -1357,30 +1398,49 @@ class TorrentSearchApp:
             index = e.control.selected_index
             print(f"DEBUG: Navigating to index {index}")
             
-            # Sync controls
+            # Sync controls immediately for instant visual feedback
             self.rail.selected_index = index
             self._update_mobile_nav_state()
             
             # Update mobile nav if visible
             if self.mobile_nav.visible:
                 self.mobile_nav.update()
+                
+            self.rail.update()
             
-            if index == 0:
-                self.body.content = self.search_view
-            elif index == 1:
-                self._refresh_bookmarks()
-                self.body.content = self.bookmarks_view
-            elif index == 2:
-                self._refresh_history()
-                self.body.content = self.history_view
-            elif index == 3:
-                self.downloads_view._refresh_list()
-                self.body.content = self.downloads_view
-            elif index == 4:
-                self.body.content = self.settings_view
-            elif index == 5:
-                self.body.content = self.about_view
-            self.body.update()
+            # Defer the heavy body swap to keep UI highly responsive
+            if hasattr(self.page, "run_task"):
+                async def _update_body():
+                    import asyncio
+                    await asyncio.sleep(0.01)
+                    try:
+                        if index == 1:
+                            self._refresh_bookmarks()
+                        elif index == 2:
+                            self._refresh_history()
+                        elif index == 3:
+                            self.downloads_view._refresh_list()
+                            
+                        # Toggle visibility instead of unmounting
+                        for i, view in enumerate(self.main_views):
+                            view.visible = (i == index)
+                            
+                        self.body.update()
+                    except Exception as err:
+                        print(f"Error in delayed navigation: {err}")
+                self.page.run_task(_update_body)
+            else:
+                if index == 1:
+                    self._refresh_bookmarks()
+                elif index == 2:
+                    self._refresh_history()
+                elif index == 3:
+                    self.downloads_view._refresh_list()
+                    
+                for i, view in enumerate(self.main_views):
+                    view.visible = (i == index)
+                    
+                self.body.update()
         except Exception as err:
             print(f"Error in navigation: {err}")
             import traceback
@@ -1389,6 +1449,10 @@ class TorrentSearchApp:
 
     def _open_changelog_dialog(self, e):
         changelog_content = ft.ListView([
+            ft.Text("v2.1.2", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Search page is now optimized for faster search results.\n• Added a new 'Reset Defaults' button to the Providers settings tab to instantly restore the original built-in providers list.\n• Fixed startup UI flash screen bug, the app now loads more smoothly.\n• Some known UI bugs & technical issues have been fixed.", size=13),
+            ft.Text("v2.1.1", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Navigation tabs now switch instantly without any visual lag.\n• Your scroll positions and page progress are perfectly preserved when switching between tabs.\n• Fixed an issue where the app could crash if you switched tabs while a search was running.\n• Search results now load and display instantly and smoothly as they are found.\n• Fixed UI overlapping issues with the scrollbar in Bookmarks, History, and Search tabs.\n• Fixed a bug where the Table View header would disappear while a search was actively running.\n", size=13),
             ft.Text("v2.1.0", weight=ft.FontWeight.BOLD, size=16),
             ft.Text("• General: Extto, FileMood, MagnetDL, Snowfl, SolidTorrent, Pirateiro, Torrent991, Zamunda.RIP\n• Anime: DMHY, Nekobt\n• Games: Byrutor, GOG Games, PCGamesTorrent\n• Adult: MyPorn.Club\n• Completely refreshed File Associations tab UI with polished toggle switches.\n• Improved Provider tab connection check button UI and implemented new filter UI.\n• General UI/UX improvements, including the new 'Version History' window in the About page.\n• Added 'Rate the App' button to the About page.\n• Fixed side bar icon layout issues.\n• Fixed and updated existing providers: Cpasbien, Kickass Torrents, YTS, Anerina, Skidrow Repack, FTUApps, VSTorrents, Academic Torrents.\n• Fixed fetch metadata UI bug in the Download tab.\n• Moved Proxy settings to the Advanced Settings tab for better organization.\n• Resolved settings JSON syntax errors.\n", size=13),
             ft.Text("v2.0.7", weight=ft.FontWeight.BOLD, size=16),
@@ -1462,7 +1526,7 @@ class TorrentSearchApp:
                 ),
                 ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
-                ft.Text("Version 2.1.1", size=20, weight=ft.FontWeight.W_500),
+                ft.Text("Version 2.1.3", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
                 ft.Text("Developed by Sayan Dey", size=18),
                 ft.Container(height=10),
@@ -2149,14 +2213,17 @@ class TorrentSearchApp:
                 pass
                 
         # Trigger real lazy loading or force a UI refresh even in search
-        def lazy_load_tab():
-            try:
-                time.sleep(0.05)
-                self._on_search_tab_change(None)
-            except Exception:
-                pass
-        
-        self.page.run_thread(lazy_load_tab)
+        if hasattr(self.page, "run_task"):
+            async def lazy_load_tab():
+                import asyncio
+                await asyncio.sleep(0.01)
+                try:
+                    self._on_search_tab_change(None)
+                except Exception:
+                    pass
+            self.page.run_task(lazy_load_tab)
+        else:
+            self._on_search_tab_change(None)
 
     def _on_tab_hover(self, e):
         """Handle hover effects on tabs"""
@@ -2711,6 +2778,9 @@ class TorrentSearchApp:
             self._select_tab(0)  # Switch to All tab on new search
         self.page.update()
 
+        # Capture current results in case we append
+        pre_append_results = self.current_results.copy() if append else []
+
         # Run in thread
         def search_task():
             results = []
@@ -2749,80 +2819,170 @@ class TorrentSearchApp:
                 """Search a single provider and return results"""
                 try:
                     print(f"Searching {provider.info.name} (Page {self.current_page})...")
-                    # Try passing page
                     try:
                         return provider.search(query, category, page=self.current_page)
                     except TypeError:
-                        # Fallback for providers not supporting pagination
                         if self.current_page == 1:
                             return provider.search(query, category)
                         else:
-                            return [] # Skip if they don't support paging
+                            return []
                 except Exception as err:
                     print(f"Error searching {provider.info.name}: {err}")
                     return []
-            
-            # Create a progress tracker to update UI every second while searching
-            search_active = True
-            def update_live_status():
-                start_time = time.time()
-                while search_active:
-                    elapsed = int(time.time() - start_time)
-                    # Don't overwrite if search just finished
-                    if not search_active: break
-                    
-                    found_count = len(results)
-                    self.status_text.value = f"Searching ({elapsed}s)... Found {found_count} results"
-                    try:
-                        self.page.update()
-                    except: pass
-                    time.sleep(1)
-            
-            self.page.run_thread(update_live_status)
 
+            # Track results and UI state
+            results_lock = threading.Lock()
+            # Protects all_results_list mutations vs ticker's .update() call
+            # to prevent "list changed size during iteration" inside Flet's serializer.
+            ui_lock = threading.Lock()
+            start_time = time.time()
+            max_per_provider = self.settings_manager.get('max_results_per_provider', 50)
+
+            # Create a control cache to prevent UI flashing during progressive sorting
+            control_cache = {}
+            cache_style = self.current_view_style
+
+            def _set_list_spacing(list_view):
+                """Apply correct spacing for current view style."""
+                if self.current_view_style == 'table':
+                    list_view.spacing = 0
+                    list_view.padding = ft.Padding.only(left=5, top=5, bottom=5, right=20)
+                elif self.current_view_style == 'compact':
+                    list_view.spacing = 3
+                    list_view.padding = ft.Padding.only(left=5, top=5, bottom=5, right=20)
+                else:
+                    list_view.spacing = 10
+                    list_view.padding = ft.Padding.only(left=10, top=10, bottom=10, right=15)
+
+            def _render_cards(list_view, items, with_header=False):
+                """Render items into a list view using the current view style with caching to prevent flicker."""
+                nonlocal cache_style
+                if not items:
+                    return
+                    
+                # If view style changed during search, invalidate cache
+                if cache_style != self.current_view_style:
+                    control_cache.clear()
+                    cache_style = self.current_view_style
+
+                # For table view, add header first if requested
+                if self.current_view_style == 'table' and with_header:
+                    header_id = "table_header"
+                    if header_id not in control_cache:
+                        header = self._create_table_view([], with_header=True)
+                        if header:
+                            control_cache[header_id] = header[0]
+                    if header_id in control_cache:
+                        list_view.controls.append(control_cache[header_id])
+
+                # Use id(t) as a unique identifier for the torrent object in memory
+                # This ensures Flet reuses existing DOM nodes instead of destroying/recreating them
+                for t in items:
+                    tid = id(t)
+                    if tid not in control_cache:
+                        if self.current_view_style == 'table':
+                            row = self._create_table_view([t], with_header=False)
+                            if row: control_cache[tid] = row[0]
+                        elif self.current_view_style == 'compact':
+                            control_cache[tid] = self._create_compact_row(t)
+                        else:
+                            control_cache[tid] = self._create_torrent_card(t)
+                            
+                    if tid in control_cache:
+                        list_view.controls.append(control_cache[tid])
+
+            start_time = time.time()
+            
             # Run all searches in parallel (max 10 concurrent)
             with ThreadPoolExecutor(max_workers=min(10, len(providers_to_search))) as executor:
-                # Submit all search tasks
                 future_to_provider = {
-                    executor.submit(search_provider, provider): provider 
+                    executor.submit(search_provider, provider): provider
                     for provider in providers_to_search
                 }
-                
-                # Collect results as they complete
+
+                # As each provider completes, append cards to all_results_list.
+                # The ticker thread above handles flushing them to the screen.
+                # We deliberately do NOT call .update() here to avoid the
+                # off-tree dirty-control exception that would silently abort the batch.
                 for future in as_completed(future_to_provider):
                     provider = future_to_provider[future]
                     try:
                         provider_results = future.result()
                         if provider_results:
-                            results.extend(provider_results)
-                            # Also update current_results progressively for tab switching
-                            if not append:
-                                self.current_results = results.copy()
-                            else:
-                                self.current_results.extend(provider_results)
-                            # Update UI with partial results for faster feedback
-                            self.status_text.value = f"Found {len(results)} results so far..."
-                            
-                            # Add new results to UI immediately (progressive loading)
-                            # We pass 'results' (local accumulator) so UI knows we have items and doesn't show "No Results"
-                            self._update_results_ui(results, append=append, new_results_count=len(provider_results), progressive_results=provider_results)
-                            
+                            with results_lock:
+                                results.extend(provider_results)
+
+                            # Update All-tab with the top results dynamically
+                            with ui_lock:
+                                # Sort a copy of current results to always show the best ones
+                                sorted_results = list(results)
+                                self._sort_results(sorted_results)
+                                
+                                # Update self.current_results so tab switching during search works instantly
+                                self.current_results = sorted_results
+                                
+                                self.all_results_list.controls.clear()
+                                _set_list_spacing(self.all_results_list)
+                                
+                                to_show_all = sorted_results[:max_per_provider]
+                                _render_cards(
+                                    self.all_results_list, to_show_all,
+                                    with_header=True
+                                )
+                                
+                                try:
+                                    # Force explicit update of the list to ensure Flet sends the diff
+                                    self.all_results_list.update()
+                                    
+                                    # Update status text
+                                    elapsed = int(time.time() - start_time)
+                                    self.status_text.value = f"Searching ({elapsed}s)... Found {len(results)} results"
+                                    self.status_text.update()
+                                    
+                                    # Optional fallback page update to ensure layout flush
+                                    self.page.update()
+                                    
+                                    # Windows idle rendering workaround: push update to main event loop
+                                    if hasattr(self.page, "run_task"):
+                                        async def _flush(): self.page.update()
+                                        self.page.run_task(_flush)
+                                except Exception as e:
+                                    print(f"DEBUG explicit update error: {e}")
+
+                            # Register provider tab structure (no card rendering here).
+                            # Never add cards to p_list — it's off-tree until the user
+                            # clicks it, and dirtying it would poison page.update().
+                            p_name = provider.info.name
+                            if p_name not in self.provider_tabs_map:
+                                p_list = ft.ListView(expand=True, spacing=10, padding=10)
+                                _set_list_spacing(p_list)
+                                self.tab_names.append(p_name)
+                                self.tab_contents.append(p_list)
+                                self.provider_tabs_map[p_name] = {'list': p_list}
+                                self._rebuild_tab_buttons()
+                                try:
+                                    self.tabs_row.update()  # tabs_row is always in tree
+                                except Exception as te:
+                                    print(f"DEBUG tabs_row update error: {te}")
                     except Exception as exc:
                         print(f"{provider.info.name} generated an exception: {exc}")
-            
-            search_active = False # Stop the progress tracker thread
-            
-            # Final sort based on current preference
-            self._sort_results(results)
-            
+            ticker_active = False   # stop heartbeat
+            time.sleep(0.25)        # let ticker thread exit before final rebuild
+
             if append:
-                # Add to existing
-                self.current_results.extend(results)
+                self.current_results = pre_append_results + results
             else:
-                self.current_results = results
+                self.current_results = list(results)
+                # Auto-reset provider filters if selected provider(s) have no results in the new search
+                if self.active_provider_filters:
+                    result_providers = set(t.provider_name for t in self.current_results)
+                    self.active_provider_filters.intersection_update(result_providers)
+                    self._update_filter_badge()
+            
+            # Final sort based on current preference when search is completed
+            self._sort_results(self.current_results)
             
             # Update status and button states
-            # (Progressive additions above will be overwritten by a clean paginated rebuild below)
             self.status_text.value = f"Found {len(self.current_results)} results"
             self.clear_results_btn.visible = len(self.current_results) > 0
             self.load_more_btn.visible = len(results) > 0
@@ -2841,12 +3001,21 @@ class TorrentSearchApp:
                  # Show filter panel if it was open
                  if self.filters_visible:
                      self.filter_panel.visible = True
+                 
+                 # AUTO-RESET provider filters that have no results in this new search
+                 if self.active_provider_filters:
+                     available_providers = set(t.provider_name for t in self.current_results)
+                     invalid_filters = [p for p in self.active_provider_filters if p not in available_providers]
+                     if invalid_filters:
+                         for p in invalid_filters:
+                             self.active_provider_filters.discard(p)
+                         self._update_filter_badge()
+                 
                  # Populate provider filter chips from results
                  self._rebuild_provider_chips()
             
-            # Rebuild cleanly paginated view (replaces the unpaginated progressive load output)
+            # Final clean rebuild: apply sort + re-render all results consistently
             self._refresh_results_view()
-
             self.page.update()
             
             # Start background scraper for unknown stats (Academic/RARBG)
@@ -2909,39 +3078,51 @@ class TorrentSearchApp:
 
             set_list_props(self.all_results_list)
 
-            # --- Process Results for "All" Tab ---
-            # If progressive_results is provided, these are the NEW items to add (or all items if not append)
-            # If we are just refreshing UI (not searching), results has everything
+            # Determine display limit
+            max_per_provider = self.settings_manager.get('max_results_per_provider', 50) or 50
+            display_limit = self.displayed_count.get("All", max_per_provider) or 50
             
             items_to_process = progressive_results if progressive_results is not None else results
             
             if not append and progressive_results is None:
                 # Full refresh case
                 self.all_results_list.controls.clear()
-                # Clear provider tabs content OR reset them if we want to be strict
-                # Since we reset tabs in _perform_search for new searches, we might just be clearing content here
-                # if this is called e.g. from _refresh_results_view or a manual refresh
+                # Clear provider tabs content
                 for p_data in self.provider_tabs_map.values():
                     p_data['list'].controls.clear()
 
             # Add to All list
-            if self.current_view_style == 'table':
-                # Table head for "All" list if fresh
-                if not append and progressive_results is None: # Only if full refresh
-                     self.all_results_list.controls.extend(self._create_table_view(items_to_process, with_header=True))
-                elif append:
-                     self.all_results_list.controls.extend(self._create_table_view(items_to_process, with_header=False))
-                else:
-                     # Progressive Search Update - "All" list might need header if empty
-                     has_header = len(self.all_results_list.controls) > 0
-                     self.all_results_list.controls.extend(self._create_table_view(items_to_process, with_header=not has_header))
+            current_displayed = len(self.all_results_list.controls)
+            if self.current_view_style == 'table' and current_displayed > 0:
+                current_displayed -= 1
+            
+            active_tab_name = self.tab_names[self.selected_tab_index] if self.selected_tab_index < len(self.tab_names) else "All"
 
-            elif self.current_view_style == 'compact':
-                for torrent in items_to_process:
-                    self.all_results_list.controls.append(self._create_compact_row(torrent))
-            else:
-                for torrent in items_to_process:
-                    self.all_results_list.controls.append(self._create_torrent_card(torrent))
+            # Slice items to not exceed display limit during progressive load
+            all_items_to_add = items_to_process
+            if not append and progressive_results is None:
+                # Full refresh: just take up to display limit
+                all_items_to_add = items_to_process[:display_limit]
+            elif progressive_results is not None:
+                # Progressive append: only take what we need to reach the limit
+                allowed_new = max(0, display_limit - current_displayed)
+                all_items_to_add = items_to_process[:allowed_new]
+            
+            # ONLY render if "All" is the active tab
+            if active_tab_name != "All":
+                all_items_to_add = []
+
+            if all_items_to_add:
+                if self.current_view_style == 'table':
+                    has_header = len(self.all_results_list.controls) > 0
+                    self.all_results_list.controls.extend(self._create_table_view(all_items_to_add, with_header=not has_header))
+    
+                elif self.current_view_style == 'compact':
+                    for torrent in all_items_to_add:
+                        self.all_results_list.controls.append(self._create_compact_row(torrent))
+                else:
+                    for torrent in all_items_to_add:
+                        self.all_results_list.controls.append(self._create_torrent_card(torrent))
 
             # --- Process Results for Provider Tabs ---
             # Group items by provider
@@ -2974,15 +3155,36 @@ class TorrentSearchApp:
                 # Add items to provider list
                 p_list = self.provider_tabs_map[provider_name]['list']
                 
+                p_current_displayed = len(p_list.controls)
+                if self.current_view_style == 'table' and p_current_displayed > 0:
+                    p_current_displayed -= 1
+                    
+                p_display_limit = self.displayed_count.get(provider_name, max_per_provider) or 50
+                
+                # ONLY render if this provider is the active tab
+                if active_tab_name != provider_name:
+                    continue
+                
+                # Slice items to not exceed display limit during progressive load
+                p_items_to_add = provider_items
+                if not append and progressive_results is None:
+                    p_items_to_add = provider_items[:p_display_limit]
+                elif progressive_results is not None:
+                    p_allowed_new = max(0, p_display_limit - p_current_displayed)
+                    p_items_to_add = provider_items[:p_allowed_new]
+                    
+                if not p_items_to_add:
+                    continue
+                
                 if self.current_view_style == 'table':
                     # Check if list has header
                     has_header = len(p_list.controls) > 0
-                    p_list.controls.extend(self._create_table_view(provider_items, with_header=not has_header))
+                    p_list.controls.extend(self._create_table_view(p_items_to_add, with_header=not has_header))
                 elif self.current_view_style == 'compact':
-                    for torrent in provider_items:
+                    for torrent in p_items_to_add:
                         p_list.controls.append(self._create_compact_row(torrent))
                 else:
-                    for torrent in provider_items:
+                    for torrent in p_items_to_add:
                         p_list.controls.append(self._create_torrent_card(torrent))
 
             # Update Load More button logic - only on "All" tab for now or all?
@@ -2997,8 +3199,24 @@ class TorrentSearchApp:
                     ft.Container(content=self.load_more_btn, alignment=ft.Alignment.CENTER, padding=10)
                 )
         try:
-            self.page.update()
-        except (AssertionError, Exception) as _err:
+            active_tab_name = self.tab_names[self.selected_tab_index] if self.selected_tab_index < len(self.tab_names) else "All"
+            
+            try: self.tab_content_container.update()
+            except: pass
+            
+            if active_tab_name == "All":
+                try: self.all_results_list.update()
+                except: pass
+            else:
+                active_list = self.provider_tabs_map.get(active_tab_name, {}).get('list')
+                if active_list:
+                    try: active_list.update()
+                    except: pass
+                    
+            try: self.page.update()
+            except: pass
+            
+        except Exception as _err:
             print(f"Warning: UI update error in _update_results_ui: {_err}")
 
     def _detect_language(self, text):
@@ -3340,7 +3558,8 @@ class TorrentSearchApp:
                         ),
                     ], spacing=2, width=130, alignment=ft.MainAxisAlignment.END),
                 ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=ft.Padding.only(left=8, top=5, bottom=5, right=35),  # Extra right padding for scrollbar
+                padding=ft.Padding.only(left=8, top=5, bottom=5, right=10),
+                margin=ft.Margin.only(right=15),  # Use margin to push the entire card away from the scrollbar
                 bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY), # Safe subtle background
                 border_radius=5,
                 border=ft.Border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY)),
@@ -3354,7 +3573,7 @@ class TorrentSearchApp:
 
     def _create_table_view(self, results, with_header=True):
         """Create table view as individual row containers for smooth scrolling"""
-        if not results:
+        if not results and not with_header:
             return []
         
         try:
@@ -3393,7 +3612,8 @@ class TorrentSearchApp:
                         ft.Text("Source", weight=ft.FontWeight.BOLD, size=11, width=80, text_align=ft.TextAlign.CENTER),
                         ft.Container(width=130),  # Actions placeholder (matches row width)
                     ], spacing=5),
-                    padding=ft.Padding.only(left=10, top=8, bottom=8, right=30),
+                    padding=ft.Padding.only(left=10, top=8, bottom=8, right=10),
+                    margin=ft.Margin.only(right=15),  # Push away from scrollbar
                     bgcolor=ft.Colors.GREY_200 if self.page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_800,
                     border_radius=ft.BorderRadius.only(top_left=5, top_right=5),
                 )
@@ -3459,7 +3679,8 @@ class TorrentSearchApp:
                             ),
                         ], spacing=2, width=130),
                     ], spacing=5, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=ft.Padding.only(left=10, top=6, bottom=6, right=30),
+                    padding=ft.Padding.only(left=10, top=6, bottom=6, right=10),
+                    margin=ft.Margin.only(right=15),  # Push away from scrollbar
                     bgcolor=row_bg,
                     border=ft.Border.only(bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY))),
                 )
@@ -3622,7 +3843,8 @@ class TorrentSearchApp:
                 # All results tab
                 self._rebuild_list(self.all_results_list, self.current_results, "All")
                 self.refreshed_tabs.add("All")
-                self.all_results_list.update()
+                try: self.all_results_list.update()
+                except: pass
             else:
                 # Provider tab
                 if active_index < len(self.tab_names):
@@ -3632,7 +3854,8 @@ class TorrentSearchApp:
                         p_list = self.provider_tabs_map[provider_name]['list']
                         self._rebuild_list(p_list, p_results, provider_name)
                         self.refreshed_tabs.add(provider_name)
-                        p_list.update()
+                        try: p_list.update()
+                        except: pass
         except Exception as e:
             print(f"Error refreshing view: {e}")
             
@@ -3766,7 +3989,8 @@ class TorrentSearchApp:
         # (Already handled by background_add_and_poll starting with a dialog)
         
         # Create a mutable container for the download object
-        download_container = {'download': None, 'error': None, 'is_duplicate': False}
+        import typing
+        download_container: typing.Dict[str, typing.Any] = {'download': None, 'error': None, 'is_duplicate': False}
         
         def cancel_loading(e=None):
             loading_dlg.open = False
@@ -4318,6 +4542,24 @@ class TorrentSearchApp:
             import libtorrent as lt
             ti = lt.torrent_info(file_path)  # type: ignore
             
+            # Check if it already exists before showing dialog
+            download_id = str(ti.info_hash())
+            with self.download_manager.lock:
+                if download_id in self.download_manager.torrents:
+                    existing = self.download_manager.torrents[download_id]
+                    self._show_snack("Torrent already exists in downloads")
+                    
+                    # Ensure it is visible
+                    existing.visible = True
+                    
+                    # Navigate to downloads tab
+                    self.rail.selected_index = 3
+                    class MockEvent:
+                        def __init__(self, control):
+                            self.control = control
+                    self._on_nav_change(MockEvent(self.rail))
+                    return
+            
             files = []
             for i in range(ti.num_files()):
                 file_entry = ti.files().at(i)
@@ -4589,6 +4831,7 @@ class TorrentSearchApp:
                                 padding=5,
                             ),
                             elevation=1,
+                            margin=ft.Margin.only(right=15, bottom=8, top=4, left=4),  # Add right margin for scrollbar
                             key=f"card_{b.get('id', name)}"
                         )
                         new_controls.append(card)
@@ -4648,7 +4891,7 @@ class TorrentSearchApp:
                             bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.GREY),
                             border=ft.Border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.GREY)),
                             border_radius=5,
-                            margin=ft.Margin.only(bottom=4),
+                            margin=ft.Margin.only(bottom=4, right=15),  # Push away from scrollbar
                             key=f"compact_{b.get('id', name)}"
                         )
                         new_controls.append(compact_row)
@@ -4812,7 +5055,7 @@ class TorrentSearchApp:
 
     # --- HISTORY VIEW ---
     def _build_history_view(self):
-        self.history_list = ft.ListView(expand=True, spacing=5, padding=5)
+        self.history_list = ft.ListView(expand=True, spacing=5, padding=ft.Padding.only(left=5, top=5, bottom=5, right=20))
         return ft.Column(
             [
                 ft.Row([
@@ -5126,6 +5369,10 @@ class TorrentSearchApp:
 
 
 def main(page: ft.Page):
+    # Hide window initially to prevent blank white flash during initialization
+    page.window.visible = False
+    page.update()
+
     # Set Windows App User Model ID for proper taskbar branding
     # This ensures Windows shows "SwiftSeed" in the taskbar jump list instead of "Flet"
     if sys.platform == 'win32' and getattr(sys, 'frozen', False):
@@ -5184,6 +5431,10 @@ def main(page: ft.Page):
     global _app_instance
     _app_instance = app
 
+    # Show window now that the UI is fully built
+    page.window.visible = True
+    page.update()
+
 
 # Global app instance reference for single instance communication
 _app_instance = None
@@ -5209,6 +5460,15 @@ def instance_message_handler(message):
             _app_instance.page.window.skip_task_bar = False  # type: ignore
             _app_instance.page.window.minimized = False  # type: ignore
             _app_instance.is_window_visible = True  # type: ignore
+            
+            # Force window to absolute top using Flet's always_on_top trick
+            _app_instance.page.window.always_on_top = True  # type: ignore
+            _app_instance.page.update()
+            
+            import time
+            time.sleep(0.1)
+            
+            _app_instance.page.window.always_on_top = False  # type: ignore
             _app_instance.page.update()
             
             # Navigate to downloads tab
@@ -5229,6 +5489,15 @@ def instance_message_handler(message):
             _app_instance.page.window.skip_task_bar = False  # type: ignore
             _app_instance.page.window.minimized = False  # type: ignore
             _app_instance.is_window_visible = True  # type: ignore
+            
+            # Force window to absolute top using Flet's always_on_top trick
+            _app_instance.page.window.always_on_top = True  # type: ignore
+            _app_instance.page.update()
+            
+            import time
+            time.sleep(0.1)
+            
+            _app_instance.page.window.always_on_top = False  # type: ignore
             _app_instance.page.update()
             
             # Navigate to downloads tab
@@ -5245,6 +5514,15 @@ def instance_message_handler(message):
         _app_instance.page.window.skip_task_bar = False  # type: ignore
         _app_instance.page.window.minimized = False  # type: ignore
         _app_instance.is_window_visible = True  # type: ignore
+        
+        # Force window to absolute top using Flet's always_on_top trick
+        _app_instance.page.window.always_on_top = True  # type: ignore
+        _app_instance.page.update()
+        
+        import time
+        time.sleep(0.1)
+        
+        _app_instance.page.window.always_on_top = False  # type: ignore
         _app_instance.page.update()
 
 
@@ -5362,7 +5640,7 @@ if __name__ == "__main__":
             target=main, 
             assets_dir=resource_path("assets"),
             name="SwiftSeed",
-            view=ft.AppView.FLET_APP
+            view=ft.AppView.FLET_APP_HIDDEN
         )
     finally:
         # Release lock when app exits

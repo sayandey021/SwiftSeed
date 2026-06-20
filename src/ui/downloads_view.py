@@ -1186,6 +1186,17 @@ class DownloadsView(ft.Container):
             import libtorrent as lt
             ti = lt.torrent_info(file_path)
             
+            # Check if it already exists before showing dialog
+            download_id = str(ti.info_hash())
+            with self.torrent_manager.lock:
+                if download_id in self.torrent_manager.torrents:
+                    existing = self.torrent_manager.torrents[download_id]
+                    self._show_snack("ℹ️ Torrent already exists in downloads")
+                    
+                    # Ensure it is visible
+                    existing.visible = True
+                    return
+            
             files = []
             for i in range(ti.num_files()):
                 file_entry = ti.files().at(i)

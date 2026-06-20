@@ -80,12 +80,21 @@ def build_msix():
         shutil.copy2(manifest_src, os.path.join(pkg_root, "AppxManifest.xml"))
         
     print("Preparing assets...")
-    ps_script = os.path.join(base_dir, "scripts", "create_msix_assets.ps1")
+    py_script = os.path.join(base_dir, "scripts", "create_msix_assets.py")
     icon_path = os.path.join(base_dir, "src", "assets", "icon.ico")
-    file_icon_path = os.path.join(base_dir, "src", "assets", "file_256_preview.png")
     
-    subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", ps_script, 
-                   "-IconPath", icon_path, "-FileIconPath", file_icon_path, "-OutputDir", pkg_assets])
+    # Prefer high-res .png over .ico for file association icons
+    file_icon_candidates = [
+        os.path.join(base_dir, "icon", "file.png"),      # High-res PNG (best)
+        os.path.join(base_dir, "src", "assets", "file.png"),
+        os.path.join(base_dir, "icon", "file.ico"),       # ICO fallback
+        os.path.join(base_dir, "src", "assets", "file.ico"),
+        os.path.join(base_dir, "src", "assets", "file_256_preview.png"),
+    ]
+    file_icon_path = next((p for p in file_icon_candidates if os.path.exists(p)), icon_path)
+    print(f"  Using file icon: {file_icon_path}")
+    
+    subprocess.run([sys.executable, py_script, "--icon", icon_path, "--file-icon", file_icon_path, "--outdir", pkg_assets])
     
     # Patch flet.exe copies with SwiftSeed branding before packing
     print("Patching Flet executables in MSIX package...")
@@ -144,9 +153,9 @@ def patch_msix_flet_exes(pkg_root):
         subprocess.run([rcedit_path, flet_exe, "--set-icon", icon_path],
                        capture_output=True, text=True)
         # Versions
-        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.1.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.3.0"],
                        capture_output=True, text=True)
-        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.1.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.3.0"],
                        capture_output=True, text=True)
         # String fields
         for key, val in version_strings.items():

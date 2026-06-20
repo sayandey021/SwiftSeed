@@ -4,13 +4,13 @@ import sys
 import traceback
 import tempfile
 import webbrowser
+import requests
 from pathlib import Path
 
 def _resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
+    base_path = getattr(sys, '_MEIPASS', None)
+    if not base_path:
         base_path = os.path.dirname(os.path.abspath(__file__))
         # Go up one level from ui/ to src/
         base_path = os.path.dirname(base_path)
@@ -45,7 +45,7 @@ class SettingsView(ft.Container):
 
         self.tabs = ft.Tabs(
             selected_index=0,
-            animation_duration=300,
+            animation_duration=0,
             on_change=self._on_tab_change,
             length=6,
             content=ft.Column([
@@ -246,7 +246,7 @@ class SettingsView(ft.Container):
             
             if not color:
                 self._page.theme = None
-                base_mode = base_mode_selector.value.lower()
+                base_mode = (base_mode_selector.value or "dark").lower()
                 self.settings_manager.set('theme', base_mode)
                 self._show_snack("Using base theme only")
             elif color == "Glass_Dark":
@@ -414,7 +414,7 @@ class SettingsView(ft.Container):
             if files and len(files) > 0:
                 path = files[0].path
                 self.settings_manager.set('bg_image_path', path)
-                bg_path_text.value = f"Current: {os.path.basename(path)}"
+                bg_path_text.value = f"Current: {os.path.basename(path or '')}"
                 bg_path_text.update()
                 self._show_snack("Background image updated")
                 update_bg_settings()
@@ -542,7 +542,7 @@ class SettingsView(ft.Container):
             if not color:
                 # No color theme selected, use base mode only
                 self._page.theme = None
-                base_mode = base_mode_selector.value.lower()
+                base_mode = (base_mode_selector.value or "dark").lower()
                 self.settings_manager.set('theme', base_mode)
                 self._show_snack("Using base theme only")
             elif color == "Glass_Dark":
@@ -1262,6 +1262,8 @@ class SettingsView(ft.Container):
         
         def update_provider_list(search_text="", category_filter="All", language_filter="All"):
             """Update the provider list based on filters"""
+            nonlocal enabled_providers
+            enabled_providers = self.settings_manager.get_enabled_providers()
             provider_container.controls.clear()
             
             def get_sort_key(p):
@@ -1407,7 +1409,7 @@ class SettingsView(ft.Container):
         def toggle_filters(e):
             advanced_filters.visible = not advanced_filters.visible
             filter_btn.icon = ft.Icons.FILTER_LIST_OFF if advanced_filters.visible else ft.Icons.FILTER_LIST
-            filter_btn.text = "Hide Filters" if advanced_filters.visible else "Filters"
+            filter_btn.text = "Hide Filters" if advanced_filters.visible else "Filters"  # type: ignore
             advanced_filters.update()
             filter_btn.update()
 
@@ -1500,6 +1502,21 @@ class SettingsView(ft.Container):
             dialog.open = True
             self._page.update()
         
+        def reset_defaults(e):
+            self.settings_manager.reset_providers_to_default()
+            nonlocal current_search, current_category, current_language
+            current_search = ""
+            current_category = "All"
+            current_language = "All"
+            search_field.value = ""
+            category_dropdown.value = "All"
+            language_dropdown.value = "All"
+            update_provider_list(current_search, current_category, current_language)
+            self._show_snack("Providers reset to default")
+            self._page.update()
+            
+        reset_btn = ft.ElevatedButton("Reset Defaults", icon=ft.Icons.RESTORE, on_click=reset_defaults, tooltip="Reset to default built-in providers")
+
         return ft.Container(
             content=ft.Column([
                 ft.Text("Built-in Providers", size=20, weight=ft.FontWeight.BOLD),
@@ -1511,6 +1528,7 @@ class SettingsView(ft.Container):
                 ft.Row([
                     search_field,
                     filter_btn,
+                    reset_btn,
                 ], spacing=15),
                 advanced_filters,
                 
@@ -1687,7 +1705,7 @@ class SettingsView(ft.Container):
             
             def do_test():
                 try:
-                    import requests
+
                     
                     # Build proxy URL
                     if username and password:
@@ -1967,7 +1985,7 @@ class SettingsView(ft.Container):
         def update_status():
             """Update the status display"""
             if not file_manager.is_running_as_executable():
-                status_icon.name = ft.Icons.WARNING_AMBER_ROUNDED
+                status_icon.name = ft.Icons.WARNING_AMBER_ROUNDED  # type: ignore
                 status_icon.color = ft.Colors.ORANGE
                 status_text.value = "Not running as Executable"
                 status_text.color = ft.Colors.ORANGE
@@ -1987,17 +2005,17 @@ class SettingsView(ft.Container):
                 magnet_switch.value = is_magnet
                 
                 if is_torrent and is_magnet:
-                    status_icon.name = ft.Icons.CHECK_CIRCLE
+                    status_icon.name = ft.Icons.CHECK_CIRCLE  # type: ignore
                     status_icon.color = ft.Colors.GREEN
                     status_text.value = "SwiftSeed is the Default Handler"
                     status_text.color = ft.Colors.GREEN
                 elif is_torrent or is_magnet:
-                    status_icon.name = ft.Icons.INFO_OUTLINE
+                    status_icon.name = ft.Icons.INFO_OUTLINE  # type: ignore
                     status_icon.color = ft.Colors.ORANGE
                     status_text.value = "Partially Configured"
                     status_text.color = ft.Colors.ORANGE
                 else:
-                    status_icon.name = ft.Icons.CANCEL
+                    status_icon.name = ft.Icons.CANCEL  # type: ignore
                     status_icon.color = ft.Colors.GREY
                     status_text.value = "Not set as Default Handler"
                     status_text.color = ft.Colors.GREY

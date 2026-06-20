@@ -2,13 +2,12 @@
 
 import json
 import os
-from typing import Dict, Any
-
+from typing import Dict, Any, Optional
 
 class SettingsManager:
     """Manages application settings using JSON file."""
     
-    def __init__(self, settings_path: str = None):
+    def __init__(self, settings_path: Optional[str] = None):
         if settings_path is None:
             # Use LOCALAPPDATA for Windows (standard app data location)
             app_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser("~")), "SwiftSeed")
@@ -35,7 +34,7 @@ class SettingsManager:
                 'knaben', 
                 'fitgirl',
                 'nyaa',
-                'eztv',
+                'extto',
             ],
             'default_category': 'All',
             'window_width': 1200,
@@ -68,6 +67,17 @@ class SettingsManager:
     def set_enabled_providers(self, provider_ids: list):
         """Set enabled provider IDs."""
         self.set('enabled_providers', provider_ids)
+        
+    def reset_providers_to_default(self):
+        """Reset enabled providers to default list."""
+        self.set('enabled_providers', [
+            'thepiratebay', 
+            'torrentscsv', 
+            'knaben', 
+            'fitgirl',
+            'nyaa',
+            'extto',
+        ])
     
     def is_provider_enabled(self, provider_id: str) -> bool:
         """Check if a provider is enabled."""

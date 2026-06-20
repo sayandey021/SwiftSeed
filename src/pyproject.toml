@@ -2,7 +2,7 @@
 name = "SwiftSeed"
 description = "SwiftSeed Torrent Client"
 authors = ["Sayan Dey"]
-version = "2.1.1"
+version = "2.1.3"
 
 [tool.flet.windows]
 product-name = "SwiftSeed"

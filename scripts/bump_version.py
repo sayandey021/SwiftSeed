@@ -100,7 +100,7 @@ def bump_version(new_version):
     print(f"Bumping version to {new_version}...")
     
     for update in updates:
-        file_path = os.path.join(base_dir, update["file"])
+        file_path = os.path.join(base_dir, str(update["file"]))
         if not os.path.exists(file_path):
             print(f"  [WARN] File not found: {update['file']}")
             continue

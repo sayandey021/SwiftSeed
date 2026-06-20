@@ -121,16 +121,22 @@ class FileAssociationManager:
             winreg.CloseKey(prog_id_key)
             
             # Set default icon
-            # Try to find file.ico in assets folder
-            icon_path = f'"{self.exe_path}",0'
+            # Find the best file.ico available
+            icon_path = f'"{self.exe_path}",0'  # fallback to exe embedded icon
             try:
                 app_dir = os.path.dirname(self.exe_path)
-                file_icon = os.path.join(app_dir, "_internal", "assets", "file.ico")
-                if not os.path.exists(file_icon):
-                    file_icon = os.path.join(app_dir, "assets", "file.ico")
-                if os.path.exists(file_icon):
-                    icon_path = f'"{file_icon}",0'
-            except:
+                # Search order: _internal/assets, assets, then icon folder
+                icon_candidates = [
+                    os.path.join(app_dir, "_internal", "assets", "file.ico"),
+                    os.path.join(app_dir, "assets", "file.ico"),
+                    os.path.join(app_dir, "_internal", "icon", "file.ico"),
+                ]
+                for candidate in icon_candidates:
+                    if os.path.exists(candidate):
+                        # Use plain path for .ico files (no ,0 suffix — that's for exe/dll)
+                        icon_path = f'"{candidate}"'
+                        break
+            except Exception:
                 pass
                 
             icon_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\SwiftSeed.TorrentFile\DefaultIcon")
