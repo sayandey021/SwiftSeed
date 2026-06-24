@@ -21,21 +21,27 @@ def load_best_image(source_path):
     For .ico files, tries to find and load the largest available frame.
     For .png/.jpg, loads directly.
     """
+    from PIL import ImageSequence
     img = Image.open(source_path)
     
     if img.format == 'ICO':
-        # ICO files contain multiple sizes. Pillow loads the largest by default,
-        # but let's be explicit and ensure we get the biggest one.
-        sizes = img.info.get('sizes', set())
-        if sizes:
-            # Pick the largest frame by area
-            best_size = max(sizes, key=lambda s: s[0] * s[1])
-            # Reopen at that specific size
-            img = Image.open(source_path)
-            img.size = best_size
-    
-    # Convert to RGBA for consistent handling
-    img = img.convert('RGBA')
+        best_img = img
+        max_area = 0
+        for frame in ImageSequence.Iterator(img):
+            area = frame.size[0] * frame.size[1]
+            if area > max_area:
+                max_area = area
+                # We need to explicitly convert and copy the frame, otherwise it might be lost when iterating
+                best_img = frame.convert('RGBA')
+        img = best_img
+    else:
+        img = img.convert('RGBA')
+        
+    # Crop to bounding box to remove any transparent padding from the source image
+    bbox = img.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+        
     return img
 
 
@@ -47,39 +53,37 @@ def generate_icon(source_img, width, height, output_path, edge_to_edge=False):
         width: Target width in pixels
         height: Target height in pixels
         output_path: Where to save the PNG
-        edge_to_edge: If True, icon fills entire canvas (for unplated variants).
+        edge_to_edge: If True, icon fills entire canvas up to its aspect ratio limits.
                       If False, adds ~12.5% padding on each side (for plated variants).
     """
-    if edge_to_edge:
-        # Icon fills the entire canvas — no padding
-        resized = source_img.resize((width, height), Image.Resampling.LANCZOS)
-        resized.save(output_path, "PNG")
+    padding_fraction = 0.0 if edge_to_edge else 0.125
+    icon_w = int(width * (1 - 2 * padding_fraction))
+    icon_h = int(height * (1 - 2 * padding_fraction))
+    
+    # Maintain aspect ratio within the padded area
+    src_aspect = source_img.width / source_img.height
+    
+    # Avoid division by zero if icon_h is somehow 0
+    if icon_h == 0:
+        icon_h = 1
+        
+    target_aspect = icon_w / icon_h
+    
+    if src_aspect > target_aspect:
+        draw_w = icon_w
+        draw_h = int(icon_w / src_aspect)
     else:
-        # Add padding so the plated background looks good
-        # Standard MSIX guidance: ~75% of tile is icon, rest is padding
-        padding_fraction = 0.125  # 12.5% padding on each side = 75% icon
-        icon_w = int(width * (1 - 2 * padding_fraction))
-        icon_h = int(height * (1 - 2 * padding_fraction))
-        
-        # Maintain aspect ratio within the padded area
-        src_aspect = source_img.width / source_img.height
-        target_aspect = icon_w / icon_h
-        
-        if src_aspect > target_aspect:
-            draw_w = icon_w
-            draw_h = int(icon_w / src_aspect)
-        else:
-            draw_h = icon_h
-            draw_w = int(icon_h * src_aspect)
-        
-        resized = source_img.resize((draw_w, draw_h), Image.Resampling.LANCZOS)
-        
-        # Create transparent canvas and paste centered
-        canvas = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        offset_x = (width - draw_w) // 2
-        offset_y = (height - draw_h) // 2
-        canvas.paste(resized, (offset_x, offset_y))
-        canvas.save(output_path, "PNG")
+        draw_h = icon_h
+        draw_w = int(icon_h * src_aspect)
+    
+    resized = source_img.resize((max(1, draw_w), max(1, draw_h)), Image.Resampling.LANCZOS)
+    
+    # Create transparent canvas and paste centered
+    canvas = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    offset_x = (width - draw_w) // 2
+    offset_y = (height - draw_h) // 2
+    canvas.paste(resized, (offset_x, offset_y))
+    canvas.save(output_path, "PNG")
 
 
 def generate_app_assets(source_path, output_dir):
@@ -88,11 +92,25 @@ def generate_app_assets(source_path, output_dir):
     print(f"  App icon source: {img.width}x{img.height} from {os.path.basename(source_path)}")
     
     app_assets = [
-        (50, 50, "StoreLogo.png", False),
-        (150, 150, "Square150x150Logo.png", False),
-        (44, 44, "Square44x44Logo.png", False),
-        (310, 150, "Wide310x150Logo.png", False),
-        (620, 300, "SplashScreen.png", False),
+        (50, 50, "StoreLogo.png", True),
+        (150, 150, "Square150x150Logo.png", True),
+        (44, 44, "Square44x44Logo.png", True),
+        (310, 150, "Wide310x150Logo.png", True),
+        (620, 300, "SplashScreen.png", True),
+        
+        # Unplated variants (Taskbar, Start menu list, Task manager)
+        (16, 16, "Square44x44Logo.targetsize-16_altform-unplated.png", True),
+        (24, 24, "Square44x44Logo.targetsize-24_altform-unplated.png", True),
+        (32, 32, "Square44x44Logo.targetsize-32_altform-unplated.png", True),
+        (48, 48, "Square44x44Logo.targetsize-48_altform-unplated.png", True),
+        (256, 256, "Square44x44Logo.targetsize-256_altform-unplated.png", True),
+
+        # Plated variants 
+        (16, 16, "Square44x44Logo.targetsize-16.png", False),
+        (24, 24, "Square44x44Logo.targetsize-24.png", False),
+        (32, 32, "Square44x44Logo.targetsize-32.png", False),
+        (48, 48, "Square44x44Logo.targetsize-48.png", False),
+        (256, 256, "Square44x44Logo.targetsize-256.png", False),
     ]
     
     for width, height, name, edge_to_edge in app_assets:
@@ -116,13 +134,13 @@ def generate_file_assets(source_path, output_dir):
         # Base icon (plated) - set to True so it doesn't double-pad the document shape
         (44, "FileLogo.png", True),
         # Target size variants - plated (with padding for plaque) - set to True to prevent tiny document icons
-        (16, "FileLogo.targetsize-16.png", True),
-        (32, "FileLogo.targetsize-32.png", True),
-        (44, "FileLogo.targetsize-44.png", True),
-        (48, "FileLogo.targetsize-48.png", True),
-        (64, "FileLogo.targetsize-64.png", True),
-        (96, "FileLogo.targetsize-96.png", True),
-        (256, "FileLogo.targetsize-256.png", True),
+        (16, "FileLogo.targetsize-16.png", False),
+        (32, "FileLogo.targetsize-32.png", False),
+        (44, "FileLogo.targetsize-44.png", False),
+        (48, "FileLogo.targetsize-48.png", False),
+        (64, "FileLogo.targetsize-64.png", False),
+        (96, "FileLogo.targetsize-96.png", False),
+        (256, "FileLogo.targetsize-256.png", False),
         # Unplated variants — EDGE TO EDGE, no padding
         # These are what Windows uses when it can display without a plaque
         (16, "FileLogo.targetsize-16_altform-unplated.png", True),

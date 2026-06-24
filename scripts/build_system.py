@@ -51,16 +51,21 @@ def build_msix():
     # Run MakeAppx and powershell script logic...
     sdk_base = r"C:\Program Files (x86)\Windows Kits\10\bin"
     makeappx = None
+    makepri = None
     if os.path.exists(sdk_base):
         for folder in os.listdir(sdk_base):
             if folder.startswith("10.0."):
-                candidate = os.path.join(sdk_base, folder, "x64", "MakeAppx.exe")
-                if os.path.exists(candidate):
-                    makeappx = candidate
+                candidate_appx = os.path.join(sdk_base, folder, "x64", "MakeAppx.exe")
+                candidate_pri = os.path.join(sdk_base, folder, "x64", "makepri.exe")
+                if os.path.exists(candidate_appx):
+                    makeappx = candidate_appx
+                if os.path.exists(candidate_pri):
+                    makepri = candidate_pri
+                if makeappx and makepri:
                     break
                     
-    if not makeappx:
-        print("Error: Windows SDK MakeAppx.exe not found.")
+    if not makeappx or not makepri:
+        print("Error: Windows SDK MakeAppx.exe or makepri.exe not found.")
         sys.exit(1)
         
     pkg_root = os.path.join(base_dir, "msix_package")
@@ -104,6 +109,19 @@ def build_msix():
     os.makedirs(out_dir, exist_ok=True)
     out_msix = os.path.join(out_dir, "SwiftSeed.msix")
     
+    print("Generating Package Resource Index (resources.pri)...")
+    priconfig_path = os.path.join(base_dir, "priconfig.xml")
+    
+    # 1. Create config
+    subprocess.run([makepri, "createconfig", "/cf", priconfig_path, "/dq", "en-US", "/o"])
+    
+    # 2. Build resources.pri inside pkg_root
+    pri_out = os.path.join(pkg_root, "resources.pri")
+    result_pri = subprocess.run([makepri, "new", "/pr", pkg_root, "/cf", priconfig_path, "/of", pri_out, "/o"])
+    if result_pri.returncode != 0:
+        print("Error: makepri failed to generate resources.pri")
+        sys.exit(1)
+        
     print("Packing MSIX...")
     result = subprocess.run([makeappx, "pack", "/d", pkg_root, "/p", out_msix, "/l", "/o"])
     if result.returncode != 0:
@@ -153,9 +171,9 @@ def patch_msix_flet_exes(pkg_root):
         subprocess.run([rcedit_path, flet_exe, "--set-icon", icon_path],
                        capture_output=True, text=True)
         # Versions
-        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.3.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.4.0"],
                        capture_output=True, text=True)
-        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.3.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.4.0"],
                        capture_output=True, text=True)
         # String fields
         for key, val in version_strings.items():

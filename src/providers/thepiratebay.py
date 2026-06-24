@@ -1,6 +1,6 @@
 """ThePirateBay search provider."""
 
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from models.torrent import Torrent
 from models.category import Category
@@ -23,7 +23,7 @@ class ThePirateBayProvider(SearchProvider):
             language="Multi",
         )
     
-    def search(self, query: str, category: Category) -> List[Torrent]:
+    def search(self, query: str, category: Category, page: int = 1) -> List[Torrent]:
         """Search ThePirateBay for torrents."""
         cat_index = self._get_category_index(category)
         url = f"https://apibay.org/q.php?q={query}&cat={cat_index}"
@@ -45,7 +45,7 @@ class ThePirateBayProvider(SearchProvider):
             print(f"ThePirateBay search error: {e}")
             return []
     
-    def _parse_torrent(self, data: dict) -> Torrent:
+    def _parse_torrent(self, data: dict) -> Optional[Torrent]:
         """Parse torrent data from API response."""
         try:
             name = data.get('name', '')
@@ -147,11 +147,12 @@ class ThePirateBayProvider(SearchProvider):
     
     def _format_size(self, bytes_size: int) -> str:
         """Format size in bytes to human readable."""
+        size = float(bytes_size)
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if bytes_size < 1024.0:
-                return f"{bytes_size:.2f} {unit}"
-            bytes_size /= 1024.0
-        return f"{bytes_size:.2f} PB"
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+            size /= 1024.0
+        return f"{size:.2f} PB"
     
     def _format_date(self, timestamp: int) -> str:
         """Format Unix timestamp to date string."""
