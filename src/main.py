@@ -180,6 +180,9 @@ class TorrentSearchApp:
 
         # Initialize managers
         self.settings_manager = SettingsManager()
+        
+        # Track app launches for rating popup
+        self._increment_launch_count()
 
         self.bookmark_manager = BookmarkManager()
         self.history_manager = SearchHistoryManager()
@@ -412,6 +415,9 @@ class TorrentSearchApp:
         # Show first-run file association prompt if needed
         self._check_and_show_file_association_prompt()
         
+        # Check if we should show the rating popup
+        self._check_and_show_rating_popup()
+        
         # If a torrent file was provided via command line, open it
         if self.pending_torrent_file:
             print(f"Opening torrent file from command line: {self.pending_torrent_file}")
@@ -430,8 +436,65 @@ class TorrentSearchApp:
                 self._open_magnet_link(self.pending_magnet_link)
             threading.Thread(target=open_magnet, daemon=True).start()
         
+    def _increment_launch_count(self):
+        import time
+        launch_count = self.settings_manager.get('launch_count', 0)
+        self.settings_manager.set('launch_count', launch_count + 1)
         
+        first_launch_time = self.settings_manager.get('first_launch_time')
+        if not first_launch_time:
+            self.settings_manager.set('first_launch_time', time.time())
+
+    def _check_and_show_rating_popup(self):
+        import time
+        import webbrowser
+        
+        has_rated = self.settings_manager.get('has_rated_app', False)
+        if has_rated:
+            return
+            
+        launch_count = self.settings_manager.get('launch_count', 0)
+        first_launch_time = self.settings_manager.get('first_launch_time', time.time())
+        
+        # Thresholds: 5 launches and 3 days
+        days_elapsed = (time.time() - first_launch_time) / (24 * 60 * 60)
+        
+        if launch_count >= 5 and days_elapsed >= 3.0:
+            def on_rate_click(e):
+                self.settings_manager.set('has_rated_app', True)
+                # Ensure the user updates this with their actual Product ID
+                webbrowser.open("ms-windows-store://review/?ProductId=YOUR_PRODUCT_ID")
+                dlg.open = False
+                self.page.update()
+
+            def on_never_click(e):
+                self.settings_manager.set('has_rated_app', True)
+                dlg.open = False
+                self.page.update()
+
+            def on_later_click(e):
+                # Reset launch count to delay the prompt by another 5 launches
+                self.settings_manager.set('launch_count', 0)
+                dlg.open = False
+                self.page.update()
+
+            dlg = ft.AlertDialog(
+                title=ft.Text("Rate SwiftSeed"),
+                content=ft.Text("Are you enjoying SwiftSeed? Please take a moment to rate us on the Microsoft Store!"),
+                actions=[
+                    ft.TextButton("Rate Now", on_click=on_rate_click),
+                    ft.TextButton("Maybe Later", on_click=on_later_click),
+                    ft.TextButton("Never Ask Again", on_click=on_never_click),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+            
+            self.page.overlay.append(dlg)
+            dlg.open = True
+            self.page.update()
+            
     
+
     def _toggle_window_taskbar_like(self, icon=None, item=None):
         """Toggle window visibility from tray icon click.
         Moves window offscreen instead of hiding it, so Flutter never
@@ -679,11 +742,13 @@ class TorrentSearchApp:
             
             # Try to load the icon from assets, fallback to simple created icon
             import os
-            icon_path = resource_path(os.path.join("assets", "icon.ico"))
+            # Use the high-quality PNG icon for the system tray because PIL handles
+            # PNG resizing much better than ICO files (which can result in blurry/bordered icons)
+            icon_path = resource_path(os.path.join("assets", "icon.png"))
             if os.path.exists(icon_path):
                 try:
                     image = Image.open(icon_path)
-                    # Resize to 64x64 if needed
+                    # Resize to 64x64 if needed for the system tray
                     if image.size != (64, 64):
                         image = image.resize((64, 64), Image.Resampling.LANCZOS)
                 except Exception as e:
@@ -1450,6 +1515,10 @@ class TorrentSearchApp:
     def _open_changelog_dialog(self, e):
         inner_content = ft.Container(
             content=ft.Column([
+            ft.Text("v2.1.5", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("  Fixed a bug where deleted downloads would restart automatically.\n  Added 'Deleted' status and 'Re-download' button for missing files.\n  Implemented an automatic 'Rate the App' popup prompt.\n  Redesigned settings with a modern Theme toggle pill and Accent Color circles.\n", size=13),
+            ft.Text("v2.1.4", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("  General UI improvements and minor bug fixes.\n", size=13),
             ft.Text("v2.1.3", weight=ft.FontWeight.BOLD, size=16),
             ft.Text("• Fixed about tab version history scrollbar issue.\n• Fixed app icon bug.\n", size=13),
             ft.Text("v2.1.2", weight=ft.FontWeight.BOLD, size=16),
@@ -1532,7 +1601,7 @@ class TorrentSearchApp:
                 ),
                 ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
-                ft.Text("Version 2.1.4", size=20, weight=ft.FontWeight.W_500),
+                ft.Text("Version 2.1.5", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
                 ft.Text("Developed by Sayan Dey", size=18),
                 ft.Container(height=10),
@@ -5129,54 +5198,189 @@ class TorrentSearchApp:
 
     # --- SETTINGS VIEW ---
     def _build_settings_view(self):
-        # Theme Switcher
-        def on_theme_change(e):
-            val = e.control.value
-            if val == "Dark":
+        # ── Saved state ──────────────────────────────────────────────────────────
+        saved_base = self.settings_manager.get('base_mode', 'dark').lower()
+        saved_accent = self.settings_manager.get('accent_color', 'default')
+
+        # Accent colors: (key, hex, display label)
+        ACCENT_COLORS = [
+            ('default', '#7986CB', 'Default Blue'),
+            ('green',   '#26A69A', 'Teal Green'),
+            ('red',     '#EF5350', 'Red'),
+            ('orange',  '#FFA726', 'Amber'),
+            ('purple',  '#AB47BC', 'Purple'),
+            ('cyan',    '#26C6DA', 'Cyan'),
+        ]
+
+        FT_COLORS_MAP = {
+            'default': ft.Colors.INDIGO_300,
+            'green':   ft.Colors.TEAL_400,
+            'red':     ft.Colors.RED_400,
+            'orange':  ft.Colors.AMBER_400,
+            'purple':  ft.Colors.PURPLE_400,
+            'cyan':    ft.Colors.CYAN_400,
+        }
+
+        # ── Helper: apply both base mode + accent ────────────────────────────────
+        def _apply_theme(base_mode: str, accent_key: str):
+            """Apply base mode (dark/light) and accent color together."""
+            accent_seed = FT_COLORS_MAP.get(accent_key, ft.Colors.INDIGO_300)
+
+            if base_mode == 'dark':
                 self.page.theme_mode = ft.ThemeMode.DARK
-                self.page.theme = None
-            elif val == "Light":
-                self.page.theme_mode = ft.ThemeMode.LIGHT
-                self.page.theme = None
+                self.page.window.bgcolor = None
+                self.page.window.opacity = 1.0
+                self.page.bgcolor = None
+                self.page.theme = ft.Theme(color_scheme_seed=accent_seed)
             else:
-                # Color themes
-                self.page.theme_mode = ft.ThemeMode.DARK
-                if val == "Blue":
-                    self.page.theme = ft.Theme(color_scheme_seed=ft.Colors.BLUE)
-                elif val == "Green":
-                    self.page.theme = ft.Theme(color_scheme_seed=ft.Colors.GREEN)
-                elif val == "Purple":
-                    self.page.theme = ft.Theme(color_scheme_seed=ft.Colors.PURPLE)
-                elif val == "Orange":
-                    self.page.theme = ft.Theme(color_scheme_seed=ft.Colors.ORANGE)
-            
-            self.settings_manager.set('theme', val.lower())
+                self.page.theme_mode = ft.ThemeMode.LIGHT
+                self.page.window.bgcolor = None
+                self.page.window.opacity = 1.0
+                self.page.bgcolor = None
+                self.page.theme = ft.Theme(color_scheme_seed=accent_seed)
+
+            self.settings_manager.set('base_mode', base_mode)
+            self.settings_manager.set('accent_color', accent_key)
+            # Keep legacy 'theme' key in sync
+            if base_mode == 'dark' and accent_key == 'default':
+                self.settings_manager.set('theme', 'dark')
+            elif base_mode == 'light' and accent_key == 'default':
+                self.settings_manager.set('theme', 'light')
+            else:
+                self.settings_manager.set('theme', accent_key)
+
             self.page.update()
-            self._show_snack(f"Theme changed to {val}")
+            # Refresh the theme pill visuals
+            _refresh_pill()
+            _refresh_circles()
+            self._show_snack(f"Theme updated")
 
-        current_theme_val = "Dark"
-        saved = self.settings_manager.get('theme', 'dark').capitalize()
-        if saved in ["Dark", "Light", "Blue", "Green", "Purple", "Orange"]:
-            current_theme_val = saved
+        # ── Dark / Light pill toggle ──────────────────────────────────────────────
+        # Keep explicit references to sub-controls so we can update them without
+        # going through the untyped .content.controls[n] path.
+        _dark_icon  = ft.Icon(ft.Icons.BRIGHTNESS_3, size=14)
+        _dark_text  = ft.Text("Dark",  size=13, weight=ft.FontWeight.W_600)
+        _light_icon = ft.Icon(ft.Icons.WB_SUNNY_OUTLINED, size=14)
+        _light_text = ft.Text("Light", size=13, weight=ft.FontWeight.W_600)
 
-        theme_selector = ft.RadioGroup(
-            content=ft.Column([
-                ft.Row([
-                    ft.Radio(value="Dark", label="Dark Mode"),
-                    ft.Radio(value="Light", label="Light Mode"),
-                ]),
-                ft.Text("Color Themes (Dark Base):", size=12, 
-                       color=ft.Colors.GREY_600 if self.page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
-                ft.Row([
-                    ft.Radio(value="Blue", label="Blue"),
-                    ft.Radio(value="Green", label="Green"),
-                    ft.Radio(value="Purple", label="Purple"),
-                    ft.Radio(value="Orange", label="Orange"),
-                ])
-            ], tight=True, spacing=3),
-            value=current_theme_val,
-            on_change=on_theme_change
+        dark_btn = ft.Container(
+            key='pill_dark',
+            content=ft.Row([_dark_icon, _dark_text], spacing=5, tight=True),
+            padding=ft.Padding.symmetric(horizontal=18, vertical=8),
+            border_radius=20,
+            animate=ft.Animation(150, ft.AnimationCurve.EASE_IN_OUT),
+            on_click=lambda e: _on_mode('dark')
         )
+        light_btn = ft.Container(
+            key='pill_light',
+            content=ft.Row([_light_icon, _light_text], spacing=5, tight=True),
+            padding=ft.Padding.symmetric(horizontal=18, vertical=8),
+            border_radius=20,
+            animate=ft.Animation(150, ft.AnimationCurve.EASE_IN_OUT),
+            on_click=lambda e: _on_mode('light')
+        )
+
+        pill_row = ft.Container(
+            content=ft.Row([dark_btn, light_btn], spacing=0, tight=True),
+            border_radius=25,
+            border=ft.Border.all(1.5, ft.Colors.with_opacity(0.25, ft.Colors.WHITE)),
+            padding=ft.Padding.all(3),
+        )
+
+        def _refresh_pill(update_page: bool = True):
+            current = self.settings_manager.get('base_mode', 'dark').lower()
+            is_dark_selected = (current == 'dark')
+            is_light_mode = self.page.theme_mode == ft.ThemeMode.LIGHT
+
+            active_bg    = ft.Colors.with_opacity(0.85, '#6C63FF') if not is_light_mode else ft.Colors.with_opacity(0.85, '#5C6BC0')
+            inactive_bg  = ft.Colors.TRANSPARENT
+            active_color   = ft.Colors.WHITE
+            inactive_color = ft.Colors.GREY_500
+
+            dark_btn.bgcolor   = active_bg    if is_dark_selected  else inactive_bg
+            _dark_icon.color   = active_color if is_dark_selected  else inactive_color
+            _dark_text.color   = active_color if is_dark_selected  else inactive_color
+
+            light_btn.bgcolor  = active_bg    if not is_dark_selected else inactive_bg
+            _light_icon.color  = active_color if not is_dark_selected else inactive_color
+            _light_text.color  = active_color if not is_dark_selected else inactive_color
+
+            if update_page:
+                try:
+                    self.page.update()
+                except Exception:
+                    pass
+
+        def _on_mode(mode: str):
+            self._current_base_mode = mode
+            _apply_theme(mode, self.settings_manager.get('accent_color', 'default'))
+
+        self._current_base_mode = saved_base
+        # Set initial pill colours without calling page.update() (not mounted yet)
+        _refresh_pill(update_page=False)
+
+        # ── Accent colour circles ─────────────────────────────────────────────────
+        accent_circles = []
+        current_accent_ref = [saved_accent]   # mutable cell
+
+        def _on_accent(key: str):
+            current_accent_ref[0] = key
+            _apply_theme(self.settings_manager.get('base_mode', 'dark').lower(), key)
+
+        def _make_circle(key: str, hex_color: str, label: str):
+            is_selected = (key == current_accent_ref[0])
+            return ft.Container(
+                key=f'accent_{key}',
+                width=40,
+                height=40,
+                bgcolor=hex_color,
+                border_radius=20,
+                border=ft.Border.all(3, ft.Colors.WHITE) if is_selected else ft.Border.all(2, ft.Colors.TRANSPARENT),
+                tooltip=label,
+                animate=ft.Animation(120, ft.AnimationCurve.EASE_IN_OUT),
+                shadow=ft.BoxShadow(
+                    blur_radius=8,
+                    color=ft.Colors.with_opacity(0.5, hex_color)
+                ) if is_selected else None,
+                on_click=lambda e, k=key: _on_accent(k),
+            )
+
+        def _refresh_circles():
+            cur = self.settings_manager.get('accent_color', 'default')
+            for i, (key, hex_color, label) in enumerate(ACCENT_COLORS):
+                c = accent_circles[i]
+                is_sel = (key == cur)
+                c.border = ft.Border.all(3, ft.Colors.WHITE) if is_sel else ft.Border.all(2, ft.Colors.TRANSPARENT)
+                c.shadow = ft.BoxShadow(
+                    blur_radius=8,
+                    color=ft.Colors.with_opacity(0.5, hex_color)
+                ) if is_sel else None
+            try:
+                self.page.update()
+            except Exception:
+                pass
+
+        for key, hex_color, label in ACCENT_COLORS:
+            accent_circles.append(_make_circle(key, hex_color, label))
+
+        circles_row = ft.Row(accent_circles, spacing=12, wrap=True)
+
+        # ── Initial visual state set above at construction time ─────────────────
+
+        theme_section = ft.Column([
+            ft.Row([
+                ft.Text("Theme:", size=14, weight=ft.FontWeight.W_500),
+                ft.Container(width=8),
+                pill_row,
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Container(height=16),
+            ft.Text("Accent Color:", size=14, weight=ft.FontWeight.W_500),
+            ft.Container(height=8),
+            circles_row,
+        ], spacing=0, tight=True)
+
+        theme_selector = theme_section
+
 
         # Built-in Provider Toggles with Category & Safety
         provider_toggles = ft.Column(spacing=3)

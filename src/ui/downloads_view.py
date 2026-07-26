@@ -692,9 +692,15 @@ class DownloadsView(ft.Container):
         controls['name_text'].value = item.name
         
         # Update buttons state
-        controls['pause_btn'].icon = ft.Icons.PAUSE if item.status in [DownloadStatus.DOWNLOADING, DownloadStatus.SEEDING, DownloadStatus.QUEUED] else ft.Icons.PLAY_ARROW
+        if item.status == DownloadStatus.DELETED:
+            controls['pause_btn'].icon = ft.Icons.REPLAY
+            controls['pause_btn'].tooltip = "Start Re-download"
+        else:
+            controls['pause_btn'].icon = ft.Icons.PAUSE if item.status in [DownloadStatus.DOWNLOADING, DownloadStatus.SEEDING, DownloadStatus.QUEUED] else ft.Icons.PLAY_ARROW
+            controls['pause_btn'].tooltip = "Pause/Resume"
+            
         controls['pause_btn'].disabled = (item.status in [DownloadStatus.STOPPED, DownloadStatus.COMPLETED])
-        controls['stop_btn'].disabled = (item.status in [DownloadStatus.STOPPED, DownloadStatus.COMPLETED])
+        controls['stop_btn'].disabled = (item.status in [DownloadStatus.STOPPED, DownloadStatus.COMPLETED, DownloadStatus.DELETED])
         
         # Update progress and text
         controls['progress_bar'].value = item.progress

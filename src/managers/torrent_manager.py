@@ -926,12 +926,23 @@ class TorrentManager:
                             except Exception as e:
                                 print(f"Error restoring priorities from json: {e}") 
                         
+                        # Check if completed download was deleted from disk
+                        if data.get('status') == 'Completed':
+                            download_path = os.path.join(save_path, data.get('name', 'Unknown'))
+                            if not os.path.exists(download_path):
+                                data['status'] = 'Deleted'
+                                is_stopped = True
+                                download.progress = 0.0
+                                download.downloaded_bytes = 0
+
                         # Apply stopped/paused state
                         if is_stopped:
                             handle.unset_flags(lt.torrent_flags.auto_managed)
                             handle.pause()
                             if data.get('status') == 'Completed':
                                 download.status = DownloadStatus.COMPLETED
+                            elif data.get('status') == 'Deleted':
+                                download.status = DownloadStatus.DELETED
                             else:
                                 download.status = DownloadStatus.STOPPED
                                 

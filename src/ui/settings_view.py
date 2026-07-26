@@ -187,126 +187,164 @@ class SettingsView(ft.Container):
             on_change=on_close_confirmation_change
         )
         
-        # Get saved theme settings
-        saved_theme = self.settings_manager.get('theme', 'dark')
-        saved_base_mode = self.settings_manager.get('base_mode', None)
-        
-        # Normalize to lowercase
-        if saved_base_mode:
-            saved_base_mode = saved_base_mode.lower()
-        
-        # If base_mode is not saved, detect from current page theme_mode
-        if not saved_base_mode:
-            saved_base_mode = 'dark' if self._page.theme_mode == ft.ThemeMode.DARK else 'light'
-            self.settings_manager.set('base_mode', saved_base_mode)
-        
-        # Use actual page theme_mode for UI display to avoid mismatch
-        actual_mode = 'Dark' if self._page.theme_mode == ft.ThemeMode.DARK else 'Light'
-        
-        # Determine current base mode and color theme
-        if saved_theme in ['dark', 'light']:
-            current_base_mode = actual_mode  # Use actual mode
-            current_color_theme = None
-        elif saved_theme in ['blue', 'green', 'purple', 'orange', 'red', 'teal']:
-            current_base_mode = actual_mode  # Use actual mode
-            current_color_theme = saved_theme.capitalize()
-        elif saved_theme == 'glass_dark':
-            current_base_mode = 'Dark'
-            current_color_theme = 'Glass_Dark'
-        elif saved_theme == 'glass_light':
-            current_base_mode = 'Light'
-            current_color_theme = 'Glass_Light'
-        elif saved_theme == 'glass':
-            current_base_mode = 'Dark'
-            current_color_theme = 'Glass_Dark'
-        else:
-            current_base_mode = actual_mode  # Use actual mode
-            current_color_theme = None
-        
-        def on_base_mode_change(e):
-            mode = e.control.value
-            
-            if mode == "Dark":
+        # ── Get saved state ────────────────────────────────────────────────────
+        saved_theme    = self.settings_manager.get('theme', 'dark')
+        saved_base_mode = (self.settings_manager.get('base_mode', None) or
+                           ('dark' if self._page.theme_mode == ft.ThemeMode.DARK else 'light'))
+        saved_base_mode = saved_base_mode.lower()
+        saved_accent   = self.settings_manager.get('accent_color', 'default')
+
+        # ── Accent colour palette ─────────────────────────────────────────────
+        ACCENT_COLORS = [
+            ('default', '#7986CB', 'Default Blue'),
+            ('green',   '#26A69A', 'Teal Green'),
+            ('red',     '#EF5350', 'Red'),
+            ('orange',  '#FFA726', 'Amber'),
+            ('purple',  '#AB47BC', 'Purple'),
+            ('cyan',    '#26C6DA', 'Cyan'),
+        ]
+        FT_COLORS_MAP = {
+            'default': ft.Colors.INDIGO_300,
+            'green':   ft.Colors.TEAL_400,
+            'red':     ft.Colors.RED_400,
+            'orange':  ft.Colors.AMBER_400,
+            'purple':  ft.Colors.PURPLE_400,
+            'cyan':    ft.Colors.CYAN_400,
+        }
+
+        # ── Apply helper ──────────────────────────────────────────────────────
+        def _apply_theme(base_mode: str, accent_key: str):
+            accent_seed = FT_COLORS_MAP.get(accent_key, ft.Colors.INDIGO_300)
+            if base_mode == 'dark':
                 self._page.theme_mode = ft.ThemeMode.DARK
-                self._page.bgcolor = None
                 self._page.window.bgcolor = None
                 self._page.window.opacity = 1.0
-            elif mode == "Light":
-                self._page.theme_mode = ft.ThemeMode.LIGHT
                 self._page.bgcolor = None
-                self._page.window.bgcolor = None
-                self._page.window.opacity = 1.0
-            
-            self.settings_manager.set('base_mode', mode.lower())
-            self._page.update()
-            self._show_snack(f"Base mode changed to {mode}")
-        
-        def on_color_theme_change(e):
-            color = e.control.value
-            
-            if not color:
-                self._page.theme = None
-                base_mode = (base_mode_selector.value or "dark").lower()
-                self.settings_manager.set('theme', base_mode)
-                self._show_snack("Using base theme only")
-            elif color == "Glass_Dark":
-                self._page.theme_mode = ft.ThemeMode.DARK
-                self._page.bgcolor = '#1C1C1E'
-                self._page.window.bgcolor = ft.Colors.TRANSPARENT
-                self._page.window.opacity = 0.95
-                self._page.theme = ft.Theme(color_scheme_seed=ft.Colors.BLUE, font_family='SF Pro Display, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif')
-                self.settings_manager.set('theme', 'glass_dark')
-                self._show_snack("Glass Dark theme applied! Restart for full effect.")
-            elif color == "Glass_Light":
-                self._page.theme_mode = ft.ThemeMode.LIGHT
-                self._page.bgcolor = '#F5F5F7'
-                self._page.window.bgcolor = ft.Colors.TRANSPARENT
-                self._page.window.opacity = 0.95
-                self._page.theme = ft.Theme(color_scheme_seed=ft.Colors.BLUE, font_family='SF Pro Display, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif')
-                self.settings_manager.set('theme', 'glass_light')
-                self._show_snack("Glass Light theme applied! Restart for full effect.")
             else:
-                color_seed = {
-                    "Blue": ft.Colors.BLUE,
-                    "Green": ft.Colors.GREEN,
-                    "Purple": ft.Colors.PURPLE,
-                    "Orange": ft.Colors.ORANGE,
-                    "Red": ft.Colors.RED,
-                    "Teal": ft.Colors.TEAL
-                }[color]
-                self._page.theme = ft.Theme(color_scheme_seed=color_seed)
-                self.settings_manager.set('theme', color.lower())
-                self._show_snack(f"Color theme: {color}")
-            
+                self._page.theme_mode = ft.ThemeMode.LIGHT
+                self._page.window.bgcolor = None
+                self._page.window.opacity = 1.0
+                self._page.bgcolor = None
+            self._page.theme = ft.Theme(color_scheme_seed=accent_seed)
+            self.settings_manager.set('base_mode', base_mode)
+            self.settings_manager.set('accent_color', accent_key)
+            if base_mode == 'dark' and accent_key == 'default':
+                self.settings_manager.set('theme', 'dark')
+            elif base_mode == 'light' and accent_key == 'default':
+                self.settings_manager.set('theme', 'light')
+            else:
+                self.settings_manager.set('theme', accent_key)
             self._page.update()
-        
-        # Base mode selector (Dark/Light)
-        base_mode_selector = ft.RadioGroup(
-            content=ft.Row([
-                ft.Radio(value="Dark", label="Dark Mode"),
-                ft.Radio(value="Light", label="Light Mode"),
-            ]),
-            value=current_base_mode,
-            on_change=on_base_mode_change
+            _refresh_pill(update_page=True)
+            _refresh_circles()
+            self._show_snack("Theme updated")
+
+        # ── Pill toggle: named sub-control refs ───────────────────────────────
+        _dark_icon  = ft.Icon(ft.Icons.BRIGHTNESS_3, size=14)
+        _dark_text  = ft.Text("Dark",  size=13, weight=ft.FontWeight.W_600)
+        _light_icon = ft.Icon(ft.Icons.WB_SUNNY_OUTLINED, size=14)
+        _light_text = ft.Text("Light", size=13, weight=ft.FontWeight.W_600)
+
+        dark_pill = ft.Container(
+            content=ft.Row([_dark_icon, _dark_text], spacing=5, tight=True),
+            padding=ft.Padding.symmetric(horizontal=18, vertical=8),
+            border_radius=20,
+            animate=ft.Animation(150, ft.AnimationCurve.EASE_IN_OUT),
+            on_click=lambda e: _on_mode('dark'),
         )
-        
-        # Color theme selector
-        color_theme_selector = ft.RadioGroup(
-            content=ft.Column([
-                ft.Row([
-                    ft.Radio(value="Blue", label="Blue"),
-                    ft.Radio(value="Green", label="Green"),
-                    ft.Radio(value="Purple", label="Purple"),
-                ]),
-                ft.Row([
-                    ft.Radio(value="Orange", label="Orange"),
-                    ft.Radio(value="Red", label="Red"),
-                    ft.Radio(value="Teal", label="Teal"),
-                ]),
-            ]),
-            value=current_color_theme,
-            on_change=on_color_theme_change
+        light_pill = ft.Container(
+            content=ft.Row([_light_icon, _light_text], spacing=5, tight=True),
+            padding=ft.Padding.symmetric(horizontal=18, vertical=8),
+            border_radius=20,
+            animate=ft.Animation(150, ft.AnimationCurve.EASE_IN_OUT),
+            on_click=lambda e: _on_mode('light'),
         )
+        pill_wrapper = ft.Container(
+            content=ft.Row([dark_pill, light_pill], spacing=0, tight=True),
+            border_radius=25,
+            border=ft.Border.all(1.5, ft.Colors.with_opacity(0.25, ft.Colors.WHITE)),
+            padding=ft.Padding.all(3),
+        )
+
+        def _refresh_pill(update_page: bool = True):
+            current = self.settings_manager.get('base_mode', 'dark').lower()
+            is_dark = (current == 'dark')
+            is_lm   = self._page.theme_mode == ft.ThemeMode.LIGHT
+            act_bg  = ft.Colors.with_opacity(0.85, '#5C6BC0' if is_lm else '#6C63FF')
+            inact   = ft.Colors.TRANSPARENT
+            on_c    = ft.Colors.WHITE
+            off_c   = ft.Colors.GREY_500
+
+            dark_pill.bgcolor  = act_bg if is_dark else inact
+            _dark_icon.color   = on_c   if is_dark else off_c
+            _dark_text.color   = on_c   if is_dark else off_c
+            light_pill.bgcolor = act_bg if not is_dark else inact
+            _light_icon.color  = on_c   if not is_dark else off_c
+            _light_text.color  = on_c   if not is_dark else off_c
+
+            if update_page:
+                try:
+                    self._page.update()
+                except Exception:
+                    pass
+
+        def _on_mode(mode: str):
+            _apply_theme(mode, self.settings_manager.get('accent_color', 'default'))
+
+        # ── Accent circles ────────────────────────────────────────────────────
+        accent_circles = []
+
+        def _on_accent(key: str):
+            _apply_theme(self.settings_manager.get('base_mode', 'dark').lower(), key)
+
+        def _make_circle(key: str, hex_color: str, label: str):
+            is_sel = (key == saved_accent)
+            return ft.Container(
+                width=40, height=40,
+                bgcolor=hex_color,
+                border_radius=20,
+                border=ft.Border.all(3, ft.Colors.WHITE) if is_sel else ft.Border.all(2, ft.Colors.TRANSPARENT),
+                tooltip=label,
+                animate=ft.Animation(120, ft.AnimationCurve.EASE_IN_OUT),
+                shadow=ft.BoxShadow(blur_radius=8,
+                    color=ft.Colors.with_opacity(0.5, hex_color)) if is_sel else None,
+                on_click=lambda e, k=key: _on_accent(k),
+            )
+
+        def _refresh_circles():
+            cur = self.settings_manager.get('accent_color', 'default')
+            for i, (key, hex_color, _) in enumerate(ACCENT_COLORS):
+                c = accent_circles[i]
+                is_sel = (key == cur)
+                c.border = ft.Border.all(3, ft.Colors.WHITE) if is_sel else ft.Border.all(2, ft.Colors.TRANSPARENT)
+                c.shadow = ft.BoxShadow(blur_radius=8,
+                    color=ft.Colors.with_opacity(0.5, hex_color)) if is_sel else None
+            try:
+                self._page.update()
+            except Exception:
+                pass
+
+        for key, hex_color, label in ACCENT_COLORS:
+            accent_circles.append(_make_circle(key, hex_color, label))
+
+        circles_row = ft.Row(accent_circles, spacing=12, wrap=True)
+
+        # Apply initial pill colour without mounting (not on page yet)
+        _refresh_pill(update_page=False)
+
+        # Assembled theme widget (replaces both old selectors)
+        theme_widget = ft.Column([
+            ft.Row([
+                ft.Text("Theme:", size=14, weight=ft.FontWeight.W_500),
+                ft.Container(width=8),
+                pill_wrapper,
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Container(height=16),
+            ft.Text("Accent Color:", size=14, weight=ft.FontWeight.W_500),
+            ft.Container(height=8),
+            circles_row,
+        ], spacing=0, tight=True)
+
         
         # Background Image
         bg_image_path = self.settings_manager.get('bg_image_path', '')
@@ -452,14 +490,7 @@ class SettingsView(ft.Container):
                 
                 ft.Text("Appearance", size=20, weight=ft.FontWeight.BOLD),
                 ft.Container(height=10),
-                ft.Text("Base Mode:", size=14, weight=ft.FontWeight.BOLD),
-                ft.Container(content=base_mode_selector, padding=10),
-                ft.Divider(),
-                ft.Text("Color Theme (Optional):", size=14, weight=ft.FontWeight.BOLD),
-                ft.Text("Add color accents to the interface", size=11, 
-                       color=ft.Colors.GREY_600 if self._page.theme_mode == ft.ThemeMode.LIGHT else ft.Colors.GREY_400),
-                ft.Container(content=color_theme_selector, padding=10),
-                
+                theme_widget,
                 ft.Divider(),
                 ft.Text("Background Image:", size=14, weight=ft.FontWeight.BOLD),
                 ft.Text("Choose a preset or set a custom image for the app background", size=11, 
