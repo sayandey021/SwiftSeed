@@ -364,6 +364,10 @@ class TorrentDownload:
         
     def update_status(self, status):
         """Update status from libtorrent status object"""
+        # Don't update status logic if it's already marked as deleted
+        if self.status == DownloadStatus.DELETED:
+            return
+            
         # Don't update status logic if manually stopped or completed
         if self.is_stopped or self.status == DownloadStatus.COMPLETED:
             if self.progress >= 1.0:
@@ -926,8 +930,8 @@ class TorrentManager:
                             except Exception as e:
                                 print(f"Error restoring priorities from json: {e}") 
                         
-                        # Check if completed download was deleted from disk
-                        if data.get('status') == 'Completed':
+                        # Check if download with data was deleted from disk
+                        if data.get('status') in ['Completed', 'Seeding'] or data.get('progress', 0.0) > 0:
                             download_path = os.path.join(save_path, data.get('name', 'Unknown'))
                             if not os.path.exists(download_path):
                                 data['status'] = 'Deleted'
@@ -1565,7 +1569,7 @@ class TorrentManager:
                                 torrent._last_file_update = current_time
                             
                             # Check for deleted files
-                            if torrent.status in [DownloadStatus.COMPLETED, DownloadStatus.SEEDING]:
+                            if torrent.status in [DownloadStatus.COMPLETED, DownloadStatus.SEEDING, DownloadStatus.STOPPED, DownloadStatus.PAUSED]:
                                 if not torrent.check_files_exist():
                                     torrent.status = DownloadStatus.DELETED
                             

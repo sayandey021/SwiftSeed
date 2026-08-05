@@ -79,7 +79,7 @@ def build_msix():
     print("Copying application files...")
     subprocess.run(["xcopy", "/E", "/I", "/Y", "/Q", os.path.join(base_dir, "dist", "SwiftSeed", "*"), os.path.join(pkg_root, "")])
     
-    manifest_src = os.path.join(base_dir, "..", "store", "AppxManifest_TEMPLATE.xml")
+    manifest_src = os.path.join(base_dir, "store assets", "AppxManifest_TEMPLATE.xml")
     if os.path.exists(manifest_src):
         import shutil
         shutil.copy2(manifest_src, os.path.join(pkg_root, "AppxManifest.xml"))
@@ -171,9 +171,9 @@ def patch_msix_flet_exes(pkg_root):
         subprocess.run([rcedit_path, flet_exe, "--set-icon", icon_path],
                        capture_output=True, text=True)
         # Versions
-        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.5.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.1.6.0"],
                        capture_output=True, text=True)
-        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.5.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.1.6.0"],
                        capture_output=True, text=True)
         # String fields
         for key, val in version_strings.items():

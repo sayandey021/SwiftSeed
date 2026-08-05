@@ -1515,6 +1515,8 @@ class TorrentSearchApp:
     def _open_changelog_dialog(self, e):
         inner_content = ft.Container(
             content=ft.Column([
+            ft.Text("v2.1.6", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("  Fixed bug in download page in download process.\n  Improved UI to prevent text overlapping with scrollbar.\n", size=13),  
             ft.Text("v2.1.5", weight=ft.FontWeight.BOLD, size=16),
             ft.Text("  Fixed a bug where deleted downloads would restart automatically.\n  Added 'Deleted' status and 'Re-download' button for missing files.\n  Implemented an automatic 'Rate the App' popup prompt.\n  Redesigned settings with a modern Theme toggle pill and Accent Color circles.\n", size=13),
             ft.Text("v2.1.4", weight=ft.FontWeight.BOLD, size=16),
@@ -1601,7 +1603,7 @@ class TorrentSearchApp:
                 ),
                 ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
-                ft.Text("Version 2.1.5", size=20, weight=ft.FontWeight.W_500),
+                ft.Text("Version 2.1.6", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
                 ft.Text("Developed by Sayan Dey", size=18),
                 ft.Container(height=10),

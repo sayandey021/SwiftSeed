@@ -66,9 +66,9 @@ def bump_version(new_version):
                 (r"elif 'fileversion' in name:\s+print\(f\"  {k.name}: '{k.val}' -> '[\d\.]+'\"\)\s+k.val = '[\d\.]+'", f"elif 'fileversion' in name:\n                print(f\"  {{k.name}}: '{{k.val}}' -> '{v_full}'\")\n                k.val = '{v_full}'")
             ]
         },
-        # 7. store/AppxManifest_TEMPLATE.xml
+        # 7. store assets/AppxManifest_TEMPLATE.xml
         {
-            "file": "../store/AppxManifest_TEMPLATE.xml",
+            "file": "store assets/AppxManifest_TEMPLATE.xml",
             "replacements": [
                 (r'\bVersion="[\d\.]+"', f'Version="{v_full}"')
             ]
