@@ -5,9 +5,8 @@ import logging
 import traceback
 import weakref
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from flet.components.hooks.use_effect import EffectHook
 from flet.controls.base_control import BaseControl
 from flet.controls.context import _context_page, context
 from flet.controls.object_patch import ObjectPatch
@@ -24,6 +23,11 @@ from flet.messaging.session_store import SessionStore
 from flet.pubsub.pubsub_client import PubSubClient
 from flet.utils.object_model import patch_dataclass
 from flet.utils.strings import random_string
+
+if TYPE_CHECKING:
+    # Annotation-only (quoted at use site): deferred so a Session doesn't eagerly
+    # pull the components/hooks subsystem (cold-start import cost).
+    from flet.components.hooks.use_effect import EffectHook
 
 logger = logging.getLogger("flet")
 patch_logger = logging.getLogger("flet_object_patch")
@@ -59,12 +63,32 @@ class Session:
         self.__pending_effects: list[tuple[weakref.ref[EffectHook], bool]] = []
         self.__updates_task: Optional[asyncio.Task] = None
         self.__closed = False
+        # Whether this session's app renders via the declarative components
+        # API (page.render/render_views). Tracked per-session — not on the
+        # global `context` singleton — so concurrent apps in one process
+        # (e.g. an embedded FletApp) keep independent update behavior.
+        self.__components_mode = False
 
         session_id = self.__id
         weakref.finalize(
             self,
             lambda: logger.info("Session was garbage collected: %s", session_id),
         )
+
+    @property
+    def components_mode(self) -> bool:
+        """
+        Whether this session's app uses the declarative components API.
+
+        Set by `Page.render`/`render_views` and read by
+        :meth:`flet.context.auto_update_enabled`. Kept on the session so that
+        multiple apps sharing one process do not interfere.
+        """
+        return self.__components_mode
+
+    @components_mode.setter
+    def components_mode(self, value: bool) -> None:
+        self.__components_mode = value
 
     @property
     def connection(self) -> Connection:
@@ -243,8 +267,9 @@ class Session:
         for c in removed_controls:
             patch_logger.debug("   %s", c)
 
+        added_ids = {added_control._i for added_control in added_controls}
         for removed_control in removed_controls:
-            if not any(added._i == removed_control._i for added in added_controls):
+            if removed_control._i not in added_ids:
                 removed_control.will_unmount()
             self.__index.pop(removed_control._i, None)
 
@@ -260,9 +285,10 @@ class Session:
         for ac in added_controls:
             patch_logger.debug("   %s", ac)
 
+        removed_ids = {removed_control._i for removed_control in removed_controls}
         for added_control in added_controls:
             self.__index[added_control._i] = added_control
-            if not any(removed._i == added_control._i for removed in removed_controls):
+            if added_control._i not in removed_ids:
                 added_control.did_mount()
 
     def apply_patch(self, control_id: int, patch: dict[str, Any]):
@@ -408,6 +434,13 @@ class Session:
             event_name: Event name without the `on_` prefix.
             event_data: Raw event payload.
         """
+        # Bind the page context to THIS session for the duration of the event.
+        # Event dispatch runs in a fresh task whose context var may otherwise
+        # carry another session's page (e.g. when a host app embeds a FletApp),
+        # which would make context-derived state such as auto-update mode
+        # resolve against the wrong session.
+        _context_page.set(self.__page)
+
         control = self.__resolve_event_control(control_id)
         if not control:
             logger.debug("Control with ID %s not found.", control_id)
@@ -631,7 +664,7 @@ class Session:
         self.__pending_updates.add(control)
         self.__updates_ready.set()
 
-    def schedule_effect(self, hook: EffectHook, is_cleanup: bool):
+    def schedule_effect(self, hook: "EffectHook", is_cleanup: bool):
         """
         Queues an effect hook setup/cleanup operation for scheduler execution.
 

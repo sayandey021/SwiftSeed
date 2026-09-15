@@ -42,6 +42,7 @@ from storage.custom_providers import CustomProviderManager
 from managers.torrent_manager import TorrentManager
 from ui.downloads_view import DownloadsView
 from ui.settings_view import SettingsView
+from utils.flet_dnd import setup_flet_dnd
 
 class TorrentSearchApp:
     def __init__(self, page: ft.Page, torrent_file=None, magnet_link=None):
@@ -463,7 +464,7 @@ class TorrentSearchApp:
             def on_rate_click(e):
                 self.settings_manager.set('has_rated_app', True)
                 # Ensure the user updates this with their actual Product ID
-                webbrowser.open("ms-windows-store://review/?ProductId=YOUR_PRODUCT_ID")
+                webbrowser.open("ms-windows-store://review/?ProductId=9NJVGTJ7151T")
                 dlg.open = False
                 self.page.update()
 
@@ -1193,6 +1194,31 @@ class TorrentSearchApp:
             print(f"Error opening torrent file: {e}")
             import traceback
             traceback.print_exc()
+
+    def _is_dnd_active(self) -> bool:
+        """Drag-and-drop is active on all tabs EXCEPT the Settings tab (index 4)"""
+        if hasattr(self, 'rail') and getattr(self.rail, 'selected_index', None) == 4:
+            return False
+        if hasattr(self, 'settings_view') and getattr(self.settings_view, 'visible', False):
+            return False
+        return True
+
+    def _on_files_dropped(self, file_paths: List[str]):
+        """Handler for files dropped onto the application window"""
+        print(f"DEBUG: Files dropped onto application: {file_paths}")
+        if not file_paths:
+            return
+        
+        # Filter for .torrent files
+        torrent_files = [f for f in file_paths if isinstance(f, str) and f.lower().endswith('.torrent')]
+        if not torrent_files:
+            print("DEBUG: Dropped files contain no .torrent files")
+            return
+            
+        for tf in torrent_files:
+            print(f"DEBUG: Opening dropped torrent file: {tf}")
+            self._open_torrent_file(tf)
+
     
     def _open_magnet_link(self, magnet_link):
         """Open a magnet link"""
@@ -1371,6 +1397,13 @@ class TorrentSearchApp:
         # Initial layout update
         self._update_layout()
 
+        # Setup native Windows COM IDropTarget Drag and Drop
+        self.dnd_controller = setup_flet_dnd(
+            self.page,
+            on_files_dropped=self._on_files_dropped,
+            is_active_callback=self._is_dnd_active
+        )
+
     def _on_resize(self, e):
         self._update_layout()
         
@@ -1515,6 +1548,8 @@ class TorrentSearchApp:
     def _open_changelog_dialog(self, e):
         inner_content = ft.Container(
             content=ft.Column([
+            ft.Text("v2.2.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("  Impliment drag & drop natively.\n  Polished and improved some UI elements.\n  Known bug fixed.\n", size=13),  
             ft.Text("v2.1.6", weight=ft.FontWeight.BOLD, size=16),
             ft.Text("  Fixed bug in download page in download process.\n  Improved UI to prevent text overlapping with scrollbar.\n", size=13),  
             ft.Text("v2.1.5", weight=ft.FontWeight.BOLD, size=16),
@@ -1603,7 +1638,7 @@ class TorrentSearchApp:
                 ),
                 ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
-                ft.Text("Version 2.1.6", size=20, weight=ft.FontWeight.W_500),
+                ft.Text("Version 2.2.1", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
                 ft.Text("Developed by Sayan Dey", size=18),
                 ft.Container(height=10),

@@ -13,11 +13,10 @@ __all__ = [
     "flet_version",
     "flutter_version",
     "from_git",
-    "pyodide_version",
 ]
 
 # set by CI
-flet_version = "0.85.3"
+flet_version = "0.86.5"
 """
 The Flet version in use.
 
@@ -27,7 +26,7 @@ when available.
 """
 
 # set by CI
-flutter_version = "3.41.7"
+flutter_version = "3.44.8"
 """
 The Flutter SDK version used when building the flet client or packaging
 apps with [`flet build`](https://flet.dev/docs/cli/flet-build/).
@@ -35,12 +34,6 @@ apps with [`flet build`](https://flet.dev/docs/cli/flet-build/).
 This value is set explicitly in CI for released packages. When running from
 source and no version is provided, it is resolved from the repository's
 `.fvmrc` file when available.
-"""
-
-PYODIDE_VERSION = "0.27.7"
-"""
-The Pyodide version being used when packaging
-with [`flet build web`](https://flet.dev/docs/cli/flet-build/).
 """
 
 
@@ -61,6 +54,8 @@ def from_git() -> Optional[str]:
             capture_output=True,
             text=True,
             check=True,
+            # Prevent console-window-flashes per git invocation on Windows.
+            creationflags=sp.CREATE_NO_WINDOW if is_windows() else 0,
         )
         tag = result.stdout.strip()
         return tag[1:] if tag.startswith("v") else tag
@@ -141,6 +136,5 @@ def get_flutter_version() -> str:
 
 
 flutter_version = get_flutter_version()
-pyodide_version = PYODIDE_VERSION
 flet_version = get_flet_version()
 __version__ = flet_version

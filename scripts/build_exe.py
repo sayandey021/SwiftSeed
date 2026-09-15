@@ -31,6 +31,9 @@ def find_python_dlls():
         if os.path.exists(search_dir):
             for f in os.listdir(search_dir):
                 if f.lower().endswith('.dll'):
+                    # Exclude unused Tkinter / Tcl libraries to save space
+                    if f.lower() in ('tcl86t.dll', 'tk86t.dll'):
+                        continue
                     full_path = os.path.join(search_dir, f)
                     if os.path.isfile(full_path):
                         # Use lowercase name as key to avoid duplicates
@@ -121,7 +124,7 @@ if os.name == 'nt' and getattr(sys, 'frozen', False):
         'libcrypto-3.dll', 'libssl-3.dll',
         'libcrypto-3-x64.dll', 'libssl-3-x64.dll',
         'zlib1.dll', 'zlib.dll', 'libffi-8.dll',
-        'python313.dll', 'python3.dll',
+        'python313.dll', 'python312.dll', 'python311.dll', 'python3.dll',
     ]
     for _name in _critical:
         for _sd in _dll_dirs:
@@ -138,9 +141,10 @@ if os.name == 'nt' and getattr(sys, 'frozen', False):
                 _LoadLib(os.path.join(_lt_dir, _f))
     
     # 8. Pre-load the .pyd itself so Windows resolves deps with our search order
-    _pyd = os.path.join(_lt_dir, '__init__.cp313-win_amd64.pyd')
-    if os.path.exists(_pyd):
-        _LoadLib(_pyd)
+    if os.path.exists(_lt_dir):
+        for _f in sorted(os.listdir(_lt_dir)):
+            if _f.lower().endswith('.pyd'):
+                _LoadLib(os.path.join(_lt_dir, _f))
     
     # NOTE: Do NOT reset SetDllDirectoryW here!
     # It must remain active for `import libtorrent` in torrent_manager.py
@@ -275,6 +279,55 @@ def post_build_copy_dlls():
         print(f"Error resolving dynamic dependencies: {e}")
 
 
+def post_build_cleanup():
+    """Remove unused heavy binaries, debug artifacts, and accidental duplicates to minimize app size."""
+    print("\nRunning post-build size minimization cleanup...")
+    dist_root = os.path.join(base_dir, 'dist', 'SwiftSeed')
+    internal_dir = os.path.join(dist_root, '_internal')
+
+    # 1. Remove accidental nested _internal/_internal directory
+    nested_internal = os.path.join(internal_dir, '_internal')
+    if os.path.exists(nested_internal):
+        shutil.rmtree(nested_internal, ignore_errors=True)
+        print("  [OK] Removed duplicate _internal/_internal directory (~19 MB saved)")
+
+    # 2. Remove libmpv-2.dll (unused 28.4 MB video/audio engine)
+    for root, _, files in os.walk(dist_root):
+        for f in files:
+            if f.lower() == 'libmpv-2.dll':
+                fp = os.path.join(root, f)
+                try:
+                    os.remove(fp)
+                    print(f"  [OK] Removed unused {f} (~28.4 MB saved)")
+                except Exception as e:
+                    print(f"  Note: could not remove {f}: {e}")
+
+    # 3. Remove leftover Tcl/Tk data and Tkinter DLLs if present
+    tcl_data = os.path.join(internal_dir, '_tcl_data')
+    if os.path.exists(tcl_data):
+        shutil.rmtree(tcl_data, ignore_errors=True)
+        print("  [OK] Removed unused _tcl_data directory (~3 MB saved)")
+
+    for tk_dll in ['tcl86t.dll', 'tk86t.dll', '_tkinter.pyd']:
+        for search_dir in [internal_dir, os.path.join(internal_dir, 'libtorrent')]:
+            fp = os.path.join(search_dir, tk_dll)
+            if os.path.exists(fp):
+                try:
+                    os.remove(fp)
+                    print(f"  [OK] Removed unused {tk_dll}")
+                except Exception:
+                    pass
+
+    # 4. Remove debug symbols and temporary files
+    for root, _, files in os.walk(dist_root):
+        for f in files:
+            if f.lower().endswith(('.pdb', '.tmp', '.bak')):
+                try:
+                    os.remove(os.path.join(root, f))
+                except Exception:
+                    pass
+
+
 def patch_executable_icons():
     """Patch all flet.exe copies with SwiftSeed icon and version info using rcedit.
 
@@ -335,8 +388,8 @@ def patch_executable_icons():
 
         # 2. Set file and product version
         for ver_flag, ver_val in [
-            ("--set-file-version", "2.5.0.0"),
-            ("--set-product-version", "2.5.0.0"),
+            ("--set-file-version", "2.1.8.0"),
+            ("--set-product-version", "2.1.8.0"),
         ]:
             result = subprocess.run(
                 [rcedit_path, flet_exe, ver_flag, ver_val],
@@ -406,27 +459,47 @@ def build_exe():
     # Create runtime hook
     runtime_hook = create_runtime_hook()
     
-    # Hidden imports - ensure all dynamic imports are captured
+    # Hidden imports - only strictly required modules
     hidden_imports = [
         'flet',
-        'flet.matplotlib_chart',
-        'flet_core',
         'libtorrent',
         'win32gui',
         'win32con',
         'win32api',
         'pystray',
         'PIL',
-        'PIL._imagingtk',
-        'PIL._tkinter_finder',
         'comtypes',
         'comtypes.stream',
         'pywin32_system32',
     ]
     
+    # Exclude unused heavy packages to drastically minimize application bundle size
+    # NOTE: Do NOT exclude 'distutils' or 'setuptools' as PyInstaller's own internal hooks require them
+    excluded_modules = [
+        'matplotlib',
+        'numpy',
+        'scipy',
+        'pandas',
+        'tkinter',
+        '_tkinter',
+        'Tkinter',
+        'cryptography',
+        'pythonnet',
+        'clr',
+        'pydantic',
+        'pydantic_core',
+        'IPython',
+        'unittest',
+        'pytest',
+        'cv2',
+        'torch',
+        'PIL.ImageTk',
+        'flet.testing',
+    ]
+    
     # Add our local modules to hidden imports just in case
     local_modules = [
-        'models', 'models.category', 'models.torrent', 'models.download',
+        'models', 'models.category', 'models.torrent',
         'providers', 'providers.base', 'providers.thepiratebay', 'providers.nyaa', 
         'providers.leet', 'providers.torrents_csv', 'providers.yts', 'providers.additional',
         'storage', 'storage.bookmarks', 'storage.settings', 'storage.history', 'storage.custom_providers',
@@ -451,11 +524,12 @@ def build_exe():
     add_binary_args = []
     
     # Add DLLs from Python installation (includes msvc_runtime package DLLs)
+    # NOTE: Destination is '.' so binaries land in _internal without creating duplicate _internal/_internal
     bundled_names = set()
     for dll_path in python_dlls:
         dll_name = os.path.basename(dll_path)
         if dll_name.lower() not in bundled_names:
-            add_binary_args.append(f'--add-binary={dll_path};_internal')
+            add_binary_args.append(f'--add-binary={dll_path};.')
             bundled_names.add(dll_name.lower())
             print(f"Will bundle: {dll_name} from {os.path.dirname(dll_path)}")
     
@@ -464,7 +538,7 @@ def build_exe():
         if dll_name.lower() not in bundled_names:
             sys32_path = os.path.join('C:/Windows/System32', dll_name)
             if os.path.exists(sys32_path):
-                add_binary_args.append(f'--add-binary={sys32_path};_internal')
+                add_binary_args.append(f'--add-binary={sys32_path};.')
                 bundled_names.add(dll_name.lower())
                 print(f"Will bundle MSVC (System32): {dll_name}")
     
@@ -479,6 +553,7 @@ def build_exe():
         '--noconsole',  # Hide console window for production
         '--clean',
         '--noconfirm',  # Overwrite output directory without asking
+        '--optimize=1',  # Optimize Python bytecode and strip assert/docstrings
         # Add icon
         f'--icon={icon_path}',
         # Add src directory to Python path
@@ -487,6 +562,8 @@ def build_exe():
         '--collect-all=flet',
         '--collect-all=pystray',
         '--collect-all=libtorrent',
+        # Exclude heavy unused modules
+        *[f'--exclude-module={mod}' for mod in excluded_modules],
         # Runtime hook to set up DLL paths before any imports
         f'--runtime-hook={runtime_hook}',
         # Hidden imports
@@ -499,13 +576,16 @@ def build_exe():
         f'--specpath={base_dir}',
         # Include DLLs
         *add_binary_args,
-        # Add version info
-        f'--version-file={os.path.join(base_dir, "version_info.txt")}',
+        # Add version info if present
+        *([f'--version-file={os.path.join(base_dir, "version_info.txt")}'] if os.path.exists(os.path.join(base_dir, "version_info.txt")) else []),
     ])
     
     # Post-build: copy any missing DLLs
     print("\nRunning post-build DLL check...")
     post_build_copy_dlls()
+    
+    # Post-build: size minimization cleanup (removes unused media engine & duplicate DLLs)
+    post_build_cleanup()
     
     # Patch flet.exe taskbar icon
     print("\nPatching executable icons...")

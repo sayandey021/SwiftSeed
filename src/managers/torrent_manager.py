@@ -96,7 +96,7 @@ if os.name == 'nt' and getattr(sys, 'frozen', False):
         'msvcp140_atomic_wait.dll', 'msvcp140_codecvt_ids.dll',
         'concrt140.dll', 'vcomp140.dll', 'vcamp140.dll', 'vccorlib140.dll',
         'ucrtbase.dll',
-        'python313.dll', 'python3.dll',
+        'python313.dll', 'python312.dll', 'python311.dll', 'python3.dll',
         'libcrypto-3.dll', 'libssl-3.dll',
         'libcrypto-3-x64.dll', 'libssl-3-x64.dll',
         'zlib1.dll', 'zlib.dll', 'libffi-8.dll',
@@ -132,16 +132,17 @@ if os.name == 'nt' and getattr(sys, 'frozen', False):
                     _dll_log_lines.append(f"LoadLibraryW FAIL: {dll_name} from {os.path.basename(search_dir)} (error {err})")
                 break
     
-    # Try to preload the .pyd itself
-    pyd_name = '__init__.cp313-win_amd64.pyd'
-    pyd_path = os.path.join(lt_dll_dir, pyd_name)
-    if os.path.exists(pyd_path):
-        handle = _LoadLibraryW(pyd_path)
-        if handle:
-            _dll_log_lines.append(f"Pre-load .pyd OK: {pyd_name}")
-        else:
-            err = _GetLastError()
-            _dll_log_lines.append(f"Pre-load .pyd FAIL: {pyd_name} (error {err})")
+    # Try to preload the .pyd itself (detect any .pyd in lt_dll_dir)
+    pyd_files = [f for f in os.listdir(lt_dll_dir) if f.lower().endswith('.pyd')] if os.path.exists(lt_dll_dir) else []
+    for pyd_name in pyd_files:
+        pyd_path = os.path.join(lt_dll_dir, pyd_name)
+        if os.path.exists(pyd_path):
+            handle = _LoadLibraryW(pyd_path)
+            if handle:
+                _dll_log_lines.append(f"Pre-load .pyd OK: {pyd_name}")
+            else:
+                err = _GetLastError()
+                _dll_log_lines.append(f"Pre-load .pyd FAIL: {pyd_name} (error {err})")
             # Try with LoadLibraryExW using LOAD_WITH_ALTERED_SEARCH_PATH
             # This makes Windows search for deps in the .pyd's own directory
             try:
@@ -176,18 +177,19 @@ except ImportError as e:
     if os.name == 'nt' and getattr(sys, 'frozen', False):
         _dll_log_lines.append(f"Standard import failed: {e}")
         _dll_log_lines.append("Trying ctypes.WinDLL(winmode=0) fallback...")
-        pyd_path = os.path.join(
-            os.path.dirname(sys.executable), '_internal', 'libtorrent',
-            '__init__.cp313-win_amd64.pyd'
-        )
-        try:
-            ctypes.WinDLL(pyd_path, winmode=0)
-            _dll_log_lines.append("WinDLL(winmode=0) OK, retrying import...")
-            import libtorrent as lt
-            _lt_import_ok = True
-            _dll_log_lines.append("Retry import OK!")
-        except Exception as e2:
-            _dll_log_lines.append(f"WinDLL(winmode=0) fallback FAIL: {e2}")
+        _lt_dir_frozen = os.path.join(os.path.dirname(sys.executable), '_internal', 'libtorrent')
+        _pyd_candidates = [f for f in os.listdir(_lt_dir_frozen) if f.lower().endswith('.pyd')] if os.path.exists(_lt_dir_frozen) else []
+        for _cand in _pyd_candidates:
+            pyd_path = os.path.join(_lt_dir_frozen, _cand)
+            try:
+                ctypes.WinDLL(pyd_path, winmode=0)
+                _dll_log_lines.append(f"WinDLL(winmode=0) OK for {_cand}, retrying import...")
+                import libtorrent as lt
+                _lt_import_ok = True
+                _dll_log_lines.append("Retry import OK!")
+                break
+            except Exception as e2:
+                _dll_log_lines.append(f"WinDLL(winmode=0) fallback FAIL for {_cand}: {e2}")
     
     if not _lt_import_ok:
         if getattr(sys, 'frozen', False):
@@ -202,8 +204,9 @@ except ImportError as e:
             _lt_dir = os.path.join(_int, 'libtorrent')
             
             # PE import scanning — find exactly what DLLs the .pyd requires
-            _pyd_path = os.path.join(_lt_dir, '__init__.cp313-win_amd64.pyd')
-            if os.path.exists(_pyd_path):
+            _pyds = [f for f in os.listdir(_lt_dir) if f.lower().endswith('.pyd')] if os.path.exists(_lt_dir) else []
+            for _cand_pyd in _pyds:
+                _pyd_path = os.path.join(_lt_dir, _cand_pyd)
                 try:
                     import struct as _st
                     with open(_pyd_path, 'rb') as _pf:

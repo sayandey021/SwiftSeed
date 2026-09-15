@@ -1,5 +1,33 @@
 # Release Notes
 
+## Version 2.3.0
+
+### 🚀 Core Engine & Dependency Modernization
+- **Libtorrent 2.1.1 Engine Upgrade**: Upgraded core BitTorrent engine to `libtorrent` 2.1.1 (`libtorrent>=2.1.1`), delivering improved session initialization, enhanced DHT peer bootstrapping, and faster transfer capabilities.
+- **Flet UI Stability (`0.86.5`)**: Updated Flet framework to `0.86.5` (`>=0.86.5,<1.0.0`), bringing the latest stable 0.x performance gains and bug fixes while protecting the UI from breaking changes introduced in Flet 1.0.
+- **Python 3.10+ Baseline & Dynamic Multi-Version Support**: 
+  - Modernized `python_requires` from legacy `>=3.7` to `>=3.10` (fully verified on Python 3.12 and 3.13).
+  - Updated native Windows DLL and `.pyd` preloading hooks (`_runtime_hook_dlls.py`, `torrent_manager.py`, and `build_exe.py`) to dynamically resolve `.pyd` binary extensions and support both `python312.dll` and `python313.dll`.
+- **App Size Optimization (~110 MB / 34.8% Reduction)**:
+  - Eliminated unused heavy libraries (`numpy`, `matplotlib`, `cryptography`, `pythonnet`, `pydantic_core`, and Tcl/Tk binaries) from the PyInstaller build bundle.
+  - Resolved duplicate nested `_internal/_internal` DLL bundling bug.
+  - Stripped unused Flet media player engine (`libmpv-2.dll`) and enabled Python bytecode optimization (`--optimize=1`), reducing uncompressed installation footprint from ~317 MB down to ~206 MB.
+- **Windows Integration & Network Dependency Alignment**:
+  - Integrated and pinned `pywin32>=305` and `comtypes>=1.2.0` for native Windows Jump List, tray management, single-instance messaging, and native drag-and-drop.
+  - Added `PySocks>=1.7.1` for reliable SOCKS4/SOCKS5 proxy support in provider networking.
+  - Synchronized and cleaned `requirements.txt` and `setup.py` with verified production version constraints.
+
+---
+
+## Version 2.2.0
+
+### 🚀 New Features & Build System Improvements
+- **Native OLE/COM Windows Drag & Drop**: Implemented native Windows `IDropTarget` COM server hook (`flet_dnd.py`) for seamless file and torrent drag-and-drop support on Windows.
+- **Robust Build System**: Fixed working directory resolution in `build.bat` (`cd /d "%~dp0"`) ensuring standalone executables and packages build reliably from any terminal environment.
+- **Version Alignment**: Bumped core desktop project versions across all manifests, installer scripts, and PyInstaller build definitions.
+
+---
+
 ## Version 2.1.0
 
 ### 🎯 Highlights

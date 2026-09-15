@@ -26,10 +26,10 @@ class SearchBar(LayoutControl):
     Manages a "search view" route that allows the user to select one of the suggested \
     completions for a search query.
 
+    Example:
     ```python
     ft.SearchBar(bar_hint_text="Search...")
     ```
-
     """
 
     controls: list[Control] = field(default_factory=list)
@@ -78,8 +78,8 @@ class SearchBar(LayoutControl):
     bar_overlay_color: Optional[ControlStateValue[ColorValue]] = None
     """
     Defines the highlight color that's typically used to indicate that the search bar \
-    is in :attr:`~flet.ControlState.FOCUSED`, :attr:`~flet.ControlState.HOVERED`, or \
-    :attr:`~flet.ControlState.PRESSED` states.
+    is in :attr:`flet.ControlState.FOCUSED`, :attr:`flet.ControlState.HOVERED`, or \
+    :attr:`flet.ControlState.PRESSED` states.
     """
 
     bar_shadow_color: Optional[ControlStateValue[ColorValue]] = None
@@ -256,7 +256,20 @@ class SearchBar(LayoutControl):
 
     on_tap_outside_bar: Optional[ControlEventHandler["SearchBar"]] = None
     """
-    Fired when the user taps outside the search bar while the search view is open.
+    Fired when a pointer-down event occurs outside the search bar while the bar is
+    focused and the search view is closed.
+
+    This mirrors :attr:`flet.TextField.on_tap_outside`. To react to taps outside
+    the search view while it is open, use :attr:`on_tap_outside_view` instead.
+    """
+
+    on_tap_outside_view: Optional[ControlEventHandler["SearchBar"]] = None
+    """
+    Fired when the user taps outside the search view while it is open (for example,
+    on the surrounding barrier that dismisses it).
+
+    Tapping the view's own search field or one of the suggestions does not fire this
+    event.
     """
 
     on_submit: Optional[ControlEventHandler["SearchBar"]] = None

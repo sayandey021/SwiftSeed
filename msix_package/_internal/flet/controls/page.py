@@ -13,14 +13,12 @@ from typing import (
     Any,
     Callable,
     Optional,
+    ParamSpec,
     TypeVar,
     Union,
 )
 from urllib.parse import urlparse
 
-from flet.auth.authorization import Authorization
-from flet.auth.oauth_provider import OAuthProvider
-from flet.components.component import Renderer
 from flet.components.public_utils import unwrap_component
 from flet.controls.base_control import BaseControl, control
 from flet.controls.base_page import BasePage
@@ -47,11 +45,7 @@ from flet.controls.exceptions import FletUnsupportedPlatformException
 from flet.controls.multi_view import MultiView
 from flet.controls.query_string import QueryString
 from flet.controls.ref import Ref
-from flet.controls.services.browser_context_menu import BrowserContextMenu
-from flet.controls.services.clipboard import Clipboard
 from flet.controls.services.service import Service
-from flet.controls.services.shared_preferences import SharedPreferences
-from flet.controls.services.storage_paths import StoragePaths
 from flet.controls.services.url_launcher import UrlLauncher
 from flet.controls.types import (
     AppLifecycleState,
@@ -68,27 +62,32 @@ from flet.utils.deprecated import deprecated
 from flet.utils.from_dict import from_dict
 from flet.utils.strings import random_string
 
-if not is_pyodide():
-    from flet.auth.authorization_service import AuthorizationService
-
-    AuthorizationImpl = AuthorizationService
-else:
-    AuthorizationImpl = Authorization
-
 if TYPE_CHECKING:
+    from flet.auth.authorization import Authorization
+    from flet.auth.oauth_provider import OAuthProvider
     from flet.messaging.session import Session
     from flet.pubsub.pubsub_client import PubSubClient
 
-try:
-    from typing import ParamSpec
-except ImportError:
-    from typing_extensions import ParamSpec
+
+def _default_authorization_impl() -> "type[Authorization]":
+    """Resolve the default `Authorization` implementation lazily.
+
+    Deferring these imports keeps the auth subsystem out of the cold-start
+    import graph for apps that never call `Page.login`.
+    """
+    if not is_pyodide():
+        from flet.auth.authorization_service import AuthorizationService
+
+        return AuthorizationService
+    from flet.auth.authorization import Authorization
+
+    return Authorization
 
 
 logger = logging.getLogger("flet")
 
 
-AT = TypeVar("AT", bound=Authorization)
+AT = TypeVar("AT", bound="Authorization")
 InputT = ParamSpec("InputT")
 RetT = TypeVar("RetT")
 
@@ -112,6 +111,19 @@ class ServiceRegistry(Service):
         super().__post_init__(ref)
         self._internals["uid"] = random_string(10)
         self._lock: threading.Lock = threading.Lock()
+
+    def init(self):
+        # Deliberately skips Service.init(), which registers the instance into
+        # `context.page._services`. A registry is the *container* for services,
+        # not a service itself, and self-registering leaks across pages: when a
+        # second Page is constructed while another page is still the current
+        # context — an embedded `FletApp` inside a host app — the new page's
+        # registry is registered inside the HOST's registry. The client has no
+        # service binding for type "ServiceRegistry", so building it throws
+        # "Unknown service" inside the host's service loop, and every service
+        # registered after it is never built: invoking one then fails with
+        # "Timeout waiting for invoke method listener".
+        BaseControl.init(self)
 
     def register_service(self, service: Service):
         """
@@ -599,12 +611,17 @@ class Page(BasePage):
 
     on_multi_view_add: Optional[EventHandler[MultiViewAddEvent]] = None
     """
-    TBD
+    Called when a new multi-view is created.
+
+    The event payload includes the new view's identifier and any initial data passed
+    when opening the view.
     """
 
     on_multi_view_remove: Optional[EventHandler[MultiViewRemoveEvent]] = None
     """
-    TBD
+    Called when a multi-view is removed.
+
+    The event payload includes the identifier of the removed view.
     """
     _services: ServiceRegistry = field(default_factory=ServiceRegistry)
 
@@ -619,6 +636,14 @@ class Page(BasePage):
         self.__last_route = None
         self.__query: QueryString = QueryString(self)
         self.__authorization: Optional[Authorization] = None
+        # App/window visibility, driven by `on_app_lifecycle_state_change`.
+        # Producer loops (e.g. `RawImage.render`) await `wait_until_visible`
+        # to park while the tab is backgrounded instead of streaming frames a
+        # suspended client can only pile up. Starts visible; the event is set
+        # while visible and cleared while hidden.
+        self.__app_visible = True
+        self.__app_visible_event = asyncio.Event()
+        self.__app_visible_event.set()
 
     def get_control(self, id: int) -> Optional[BaseControl]:
         """
@@ -652,6 +677,8 @@ class Page(BasePage):
             **kwargs: Keyword arguments passed to `component`.
         """
 
+        from flet.components.component import Renderer
+
         logger.debug("Page.render()")
         self._notify = self.__notify
         self.views[0].controls = Renderer().render(component, *args, **kwargs)
@@ -674,6 +701,8 @@ class Page(BasePage):
             *args: Positional arguments passed to `component`.
             **kwargs: Keyword arguments passed to `component`.
         """
+
+        from flet.components.component import Renderer
 
         logger.debug("Page.render_views()")
         self._notify = self.__notify
@@ -760,7 +789,54 @@ class Page(BasePage):
                     e.view = v
                     break
 
+        elif isinstance(e, AppLifecycleStateChangeEvent):
+            # `HIDE`/`PAUSE` are the only states where the client cannot
+            # display frames (backgrounded tab, minimized/paused window).
+            # `DETACH` unparks so loops don't hang on teardown.
+            self.__set_app_visible(
+                e.state not in (AppLifecycleState.HIDE, AppLifecycleState.PAUSE)
+            )
+
         return super().before_event(e)
+
+    def __set_app_visible(self, visible: bool) -> None:
+        self.__app_visible = visible
+        if visible:
+            self.__app_visible_event.set()
+        else:
+            self.__app_visible_event.clear()
+
+    @property
+    def app_visible(self) -> bool:
+        """
+        Whether the app window (or browser tab) is currently visible.
+
+        Driven by `on_app_lifecycle_state_change`: `False` while the
+        state is `HIDE` or `PAUSE`, `True` otherwise. Distinct from the
+        control-level `visible` property, which hides the page itself.
+        """
+        return self.__app_visible
+
+    async def wait_until_visible(self) -> None:
+        """
+        Suspend until the app window (or browser tab) is visible.
+
+        Returns immediately when already visible. While hidden, the client's
+        render pipeline is suspended, so a producer loop that keeps pushing
+        frames only builds a backlog that floods the client on resume.
+        Awaiting this at the top of such a loop parks the producer until the
+        tab returns:
+
+        ```python
+        while True:
+            await page.wait_until_visible()
+            await raw_image.render(produce_frame())
+        ```
+
+        The streaming controls (`RawImage`, `MatplotlibChart`) already gate
+        their sends on this internally.
+        """
+        await self.__app_visible_event.wait()
 
     def run_task(
         self,
@@ -1045,7 +1121,7 @@ class Page(BasePage):
 
     async def login(
         self,
-        provider: OAuthProvider,
+        provider: "OAuthProvider",
         fetch_user: bool = True,
         fetch_groups: bool = False,
         scope: Optional[list[str]] = None,
@@ -1055,14 +1131,16 @@ class Page(BasePage):
         ] = None,
         complete_page_html: Optional[str] = None,
         redirect_to_page: Optional[bool] = False,
-        authorization: type[AT] = AuthorizationImpl,
-    ) -> AT:
+        authorization: "Optional[type[AT]]" = None,
+    ) -> "AT":
         """
         Starts OAuth flow.
 
         See [Authentication](https://flet.dev/docs/cookbook/authentication)
         guide for more information and examples.
         """
+        if authorization is None:
+            authorization = _default_authorization_impl()
         self.__authorization = authorization(
             provider,
             fetch_user=fetch_user,
@@ -1273,7 +1351,7 @@ class Page(BasePage):
         return self.session.connection.executor
 
     @property
-    def auth(self) -> Optional[Authorization]:
+    def auth(self) -> "Optional[Authorization]":
         """
         The current authorization context, or `None` if the user is not authorized.
         """
@@ -1310,6 +1388,7 @@ class Page(BasePage):
         """
         The BrowserContextMenu service for the current page.
         """
+        from flet.controls.services.browser_context_menu import BrowserContextMenu
 
         return BrowserContextMenu()
 
@@ -1324,6 +1403,7 @@ class Page(BasePage):
         """
         The SharedPreferences service for the current page.
         """
+        from flet.controls.services.shared_preferences import SharedPreferences
 
         return SharedPreferences()
 
@@ -1338,6 +1418,7 @@ class Page(BasePage):
         """
         The Clipboard service for the current page.
         """
+        from flet.controls.services.clipboard import Clipboard
 
         return Clipboard()
 
@@ -1352,6 +1433,7 @@ class Page(BasePage):
         """
         The StoragePaths service for the current page.
         """
+        from flet.controls.services.storage_paths import StoragePaths
 
         return StoragePaths()
 
@@ -1367,7 +1449,7 @@ class Page(BasePage):
 
         if self.web:
             return from_dict(WebDeviceInfo, info)
-        elif self.platform == PagePlatform.ANDROID:
+        elif self.platform in [PagePlatform.ANDROID, PagePlatform.ANDROID_TV]:
             return from_dict(AndroidDeviceInfo, info)
         elif self.platform == PagePlatform.IOS:
             return from_dict(IosDeviceInfo, info)

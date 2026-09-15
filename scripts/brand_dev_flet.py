@@ -110,8 +110,8 @@ def brand_flet_exe():
     
     # 2. Set file and product version
     for ver_flag, ver_val in [
-        ("--set-file-version", "2.5.0.0"),
-        ("--set-product-version", "2.5.0.0"),
+        ("--set-file-version", "2.1.8.0"),
+        ("--set-product-version", "2.1.8.0"),
     ]:
         result = subprocess.run(
             [rcedit, local_flet_exe, ver_flag, ver_val],

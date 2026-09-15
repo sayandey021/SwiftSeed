@@ -68,7 +68,7 @@ if os.name == 'nt' and getattr(sys, 'frozen', False):
         'libcrypto-3.dll', 'libssl-3.dll',
         'libcrypto-3-x64.dll', 'libssl-3-x64.dll',
         'zlib1.dll', 'zlib.dll', 'libffi-8.dll',
-        'python313.dll', 'python3.dll',
+        'python313.dll', 'python312.dll', 'python311.dll', 'python3.dll',
     ]
     for _name in _critical:
         for _sd in _dll_dirs:
@@ -85,9 +85,10 @@ if os.name == 'nt' and getattr(sys, 'frozen', False):
                 _LoadLib(os.path.join(_lt_dir, _f))
     
     # 8. Pre-load the .pyd itself so Windows resolves deps with our search order
-    _pyd = os.path.join(_lt_dir, '__init__.cp313-win_amd64.pyd')
-    if os.path.exists(_pyd):
-        _LoadLib(_pyd)
+    if os.path.exists(_lt_dir):
+        for _f in sorted(os.listdir(_lt_dir)):
+            if _f.lower().endswith('.pyd'):
+                _LoadLib(os.path.join(_lt_dir, _f))
     
     # NOTE: Do NOT reset SetDllDirectoryW here!
     # It must remain active for `import libtorrent` in torrent_manager.py
