@@ -83,6 +83,9 @@ def build_msix():
     if os.path.exists(manifest_src):
         import shutil
         shutil.copy2(manifest_src, os.path.join(pkg_root, "AppxManifest.xml"))
+    else:
+        print(f"Error: Manifest template not found at {manifest_src}")
+        sys.exit(1)
         
     print("Preparing assets...")
     py_script = os.path.join(base_dir, "scripts", "create_msix_assets.py")
@@ -171,9 +174,9 @@ def patch_msix_flet_exes(pkg_root):
         subprocess.run([rcedit_path, flet_exe, "--set-icon", icon_path],
                        capture_output=True, text=True)
         # Versions
-        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.2.1.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-file-version", "2.3.1.0"],
                        capture_output=True, text=True)
-        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.2.1.0"],
+        subprocess.run([rcedit_path, flet_exe, "--set-product-version", "2.3.1.0"],
                        capture_output=True, text=True)
         # String fields
         for key, val in version_strings.items():

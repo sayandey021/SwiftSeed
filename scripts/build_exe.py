@@ -291,16 +291,7 @@ def post_build_cleanup():
         shutil.rmtree(nested_internal, ignore_errors=True)
         print("  [OK] Removed duplicate _internal/_internal directory (~19 MB saved)")
 
-    # 2. Remove libmpv-2.dll (unused 28.4 MB video/audio engine)
-    for root, _, files in os.walk(dist_root):
-        for f in files:
-            if f.lower() == 'libmpv-2.dll':
-                fp = os.path.join(root, f)
-                try:
-                    os.remove(fp)
-                    print(f"  [OK] Removed unused {f} (~28.4 MB saved)")
-                except Exception as e:
-                    print(f"  Note: could not remove {f}: {e}")
+    # NOTE: libmpv-2.dll must NOT be removed as Flet's Windows client (media_kit) depends on it.
 
     # 3. Remove leftover Tcl/Tk data and Tkinter DLLs if present
     tcl_data = os.path.join(internal_dir, '_tcl_data')
@@ -436,23 +427,19 @@ def build_exe():
             pass
     time.sleep(1)  # Give OS time to release file locks
     
-    # Copy torrent file icons from the icon directory to assets
+    # Copy app and file icons from icon/ to src/assets/ if available
     try:
         icon_dir = os.path.join(base_dir, "icon")
         assets_dir = os.path.join(src_dir, "assets")
+        os.makedirs(assets_dir, exist_ok=True)
         
-        file_ico_src = os.path.join(icon_dir, "file.ico")
-        file_png_src = os.path.join(icon_dir, "file.png")
-        
-        if os.path.exists(file_ico_src):
-            shutil.copy2(file_ico_src, os.path.join(assets_dir, "file.ico"))
-            print(f"Copied {file_ico_src} to assets.")
-            
-        if os.path.exists(file_png_src):
-            shutil.copy2(file_png_src, os.path.join(assets_dir, "file.png"))
-            print(f"Copied {file_png_src} to assets.")
+        for icon_fname in ["icon.png", "icon.ico", "file.png", "file.ico"]:
+            src_icon = os.path.join(icon_dir, icon_fname)
+            if os.path.exists(src_icon):
+                shutil.copy2(src_icon, os.path.join(assets_dir, icon_fname))
+                print(f"Copied {src_icon} to assets.")
     except Exception as e:
-        print(f"Error copying file icons: {e}")
+        print(f"Error copying icons: {e}")
 
     icon_path = os.path.join(src_dir, "assets", "icon.ico")
     

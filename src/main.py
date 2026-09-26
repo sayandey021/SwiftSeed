@@ -54,9 +54,9 @@ class TorrentSearchApp:
         # Set window icon
         self.page.window.icon = "icon.png"
         
-        # Explicitly set window title bar (ensures taskbar shows correct name)
-        self.page.window.title_bar_hidden = False
-        self.page.window.title_bar_buttons_hidden = False
+        # Hide default native title bar and system buttons to allow custom aesthetic title bar
+        self.page.window.title_bar_hidden = True
+        self.page.window.title_bar_buttons_hidden = True
 
         # Window configuration for glass theme
 
@@ -963,6 +963,14 @@ class TorrentSearchApp:
             self.is_window_focused = True
             self.is_window_visible = True
             self.last_focus_time = time.time()
+            self._is_maximized = False
+            self._sync_maximize_icon()
+        elif any(x in e_type or x in e_name for x in ["maximize"]):
+            self._is_maximized = True
+            self._sync_maximize_icon()
+        elif any(x in e_type or x in e_name for x in ["unmaximize"]):
+            self._is_maximized = False
+            self._sync_maximize_icon()
             
     def _show_exit_dialog(self):
         """Show the premium exit confirmation dialog"""
@@ -1265,6 +1273,244 @@ class TorrentSearchApp:
             
         self.page.update()
 
+    # ── Custom Title Bar ──────────────────────────────────────────────────────
+    def _build_custom_title_bar(self):
+        """Construct a modern, aesthetic custom title bar matching app themes."""
+        # 1. Left Brand Identity
+        app_icon_path = resource_path(os.path.join("assets", "icon.png"))
+        self.title_bar_icon = ft.Image(
+            src=app_icon_path,
+            width=16,
+            height=16,
+            fit=ft.BoxFit.CONTAIN,
+        )
+        self.title_bar_title_text = ft.Text(
+            "SwiftSeed",
+            size=12,
+            weight=ft.FontWeight.W_600,
+            font_family="Segoe UI, -apple-system, sans-serif",
+        )
+        self.title_bar_version_text = ft.Text(
+            "v2.3.1",
+            size=10,
+            weight=ft.FontWeight.W_500,
+        )
+        self.title_bar_version_badge = ft.Container(
+            content=self.title_bar_version_text,
+            padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+            border_radius=4,
+            margin=ft.Margin.only(left=8),
+        )
+
+        brand_row = ft.Row(
+            [
+                ft.Container(
+                    content=self.title_bar_icon,
+                    padding=ft.Padding.only(left=12, right=8),
+                ),
+                self.title_bar_title_text,
+                self.title_bar_version_badge,
+            ],
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        # 2. Window Drag Area (covers brand and all free center space)
+        self.window_drag_area = ft.WindowDragArea(
+            content=ft.Container(
+                content=brand_row,
+                expand=True,
+                alignment=ft.Alignment.CENTER_LEFT,
+            ),
+            expand=True,
+            maximizable=True,
+            on_double_tap=lambda _: self._toggle_maximize_window(),
+        )
+
+        # 3. Native Window Action Buttons (Minimize, Maximize/Restore, Close)
+        self.minimize_icon_ctrl = ft.Icon(ft.Icons.REMOVE, size=14)
+        self.minimize_btn = ft.Container(
+            content=self.minimize_icon_ctrl,
+            width=46,
+            height=34,
+            alignment=ft.Alignment.CENTER,
+            tooltip="Minimize",
+            animate=ft.Animation(100, ft.AnimationCurve.EASE_OUT),
+            on_click=self._minimize_window,
+            on_hover=lambda e: self._on_window_btn_hover(e, "minimize"),
+        )
+
+        self.maximize_icon_ctrl = ft.Icon(ft.Icons.CROP_SQUARE, size=13)
+        self.maximize_btn = ft.Container(
+            content=self.maximize_icon_ctrl,
+            width=46,
+            height=34,
+            alignment=ft.Alignment.CENTER,
+            tooltip="Maximize",
+            animate=ft.Animation(100, ft.AnimationCurve.EASE_OUT),
+            on_click=self._toggle_maximize_window,
+            on_hover=lambda e: self._on_window_btn_hover(e, "maximize"),
+        )
+
+        self.close_icon_ctrl = ft.Icon(ft.Icons.CLOSE, size=14)
+        self.close_btn = ft.Container(
+            content=self.close_icon_ctrl,
+            width=46,
+            height=34,
+            alignment=ft.Alignment.CENTER,
+            tooltip="Close",
+            animate=ft.Animation(100, ft.AnimationCurve.EASE_OUT),
+            on_click=self._on_title_bar_close,
+            on_hover=lambda e: self._on_window_btn_hover(e, "close"),
+        )
+
+        window_controls_row = ft.Row(
+            [self.minimize_btn, self.maximize_btn, self.close_btn],
+            spacing=0,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        # 4. Title Bar Shell
+        self.custom_title_bar = ft.Container(
+            content=ft.Row(
+                [self.window_drag_area, window_controls_row],
+                spacing=0,
+                expand=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            height=34,
+            padding=0,
+            margin=0,
+            animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
+        )
+
+        self._update_title_bar_theme()
+        return self.custom_title_bar
+
+    def _update_title_bar_theme(self):
+        """Update custom title bar colors and borders to match base mode and accents."""
+        if not hasattr(self, 'custom_title_bar'):
+            return
+
+        base_mode = self.settings_manager.get('base_mode', 'dark')
+        base_mode_lower = base_mode.lower() if base_mode else 'dark'
+        is_glass = base_mode_lower == 'glass'
+        is_light = base_mode_lower == 'light'
+
+        if is_glass:
+            self.custom_title_bar.bgcolor = ft.Colors.with_opacity(0.12, ft.Colors.BLACK)
+            self.custom_title_bar.border = ft.Border.only(
+                bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.1, ft.Colors.WHITE))
+            )
+            fg_color = ft.Colors.WHITE
+            muted_fg = ft.Colors.with_opacity(0.65, ft.Colors.WHITE)
+            badge_bg = ft.Colors.with_opacity(0.14, ft.Colors.WHITE)
+        elif is_light:
+            self.custom_title_bar.bgcolor = "#EAEBF0"
+            self.custom_title_bar.border = ft.Border.only(
+                bottom=ft.BorderSide(1, "#D8DAE2")
+            )
+            fg_color = "#1D1D24"
+            muted_fg = "#6E7182"
+            badge_bg = "#DDDFE6"
+        else:  # Dark mode
+            self.custom_title_bar.bgcolor = "#12131A"
+            self.custom_title_bar.border = ft.Border.only(
+                bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE))
+            )
+            fg_color = "#ECECF1"
+            muted_fg = "#8E8F9B"
+            badge_bg = ft.Colors.with_opacity(0.08, ft.Colors.WHITE)
+
+        self._title_bar_fg_color = fg_color
+
+        if hasattr(self, 'title_bar_title_text'):
+            self.title_bar_title_text.color = fg_color
+        if hasattr(self, 'title_bar_version_text'):
+            self.title_bar_version_text.color = muted_fg
+        if hasattr(self, 'title_bar_version_badge'):
+            self.title_bar_version_badge.bgcolor = badge_bg
+        if hasattr(self, 'minimize_icon_ctrl'):
+            self.minimize_icon_ctrl.color = fg_color
+        if hasattr(self, 'maximize_icon_ctrl'):
+            self.maximize_icon_ctrl.color = fg_color
+        if hasattr(self, 'close_icon_ctrl'):
+            self.close_icon_ctrl.color = fg_color
+
+    def _on_window_btn_hover(self, e, btn_type: str):
+        """Interactive hover styling for window buttons."""
+        is_hovered = e.data == "true"
+        is_light = getattr(self.page, 'theme_mode', ft.ThemeMode.DARK) == ft.ThemeMode.LIGHT
+
+        if btn_type == "close":
+            if hasattr(self, 'close_btn') and hasattr(self, 'close_icon_ctrl'):
+                self.close_btn.bgcolor = "#E81123" if is_hovered else ft.Colors.TRANSPARENT
+                self.close_icon_ctrl.color = ft.Colors.WHITE if is_hovered else getattr(self, '_title_bar_fg_color', ft.Colors.WHITE)
+                self.close_btn.update()
+        elif btn_type == "minimize":
+            if hasattr(self, 'minimize_btn'):
+                hover_bg = ft.Colors.with_opacity(0.08, ft.Colors.BLACK) if is_light else ft.Colors.with_opacity(0.12, ft.Colors.WHITE)
+                self.minimize_btn.bgcolor = hover_bg if is_hovered else ft.Colors.TRANSPARENT
+                self.minimize_btn.update()
+        elif btn_type == "maximize":
+            if hasattr(self, 'maximize_btn'):
+                hover_bg = ft.Colors.with_opacity(0.08, ft.Colors.BLACK) if is_light else ft.Colors.with_opacity(0.12, ft.Colors.WHITE)
+                self.maximize_btn.bgcolor = hover_bg if is_hovered else ft.Colors.TRANSPARENT
+                self.maximize_btn.update()
+
+    def _minimize_window(self, e=None):
+        """Minimize the main window to taskbar."""
+        try:
+            self.page.window.minimized = True
+            self.page.update()
+        except Exception as ex:
+            print(f"Error minimizing window: {ex}")
+
+    def _toggle_maximize_window(self, e=None):
+        """Toggle between maximized and restored window states."""
+        try:
+            current_max = getattr(self.page.window, 'maximized', False) or getattr(self, '_is_maximized', False)
+            new_max = not current_max
+            self.page.window.maximized = new_max
+            self._is_maximized = new_max
+            self._sync_maximize_icon()
+            self.page.update()
+        except Exception as ex:
+            print(f"Error toggling maximize: {ex}")
+
+    def _sync_maximize_icon(self):
+        """Update the maximize/restore icon and tooltip."""
+        try:
+            is_max = getattr(self.page.window, 'maximized', False) or getattr(self, '_is_maximized', False)
+            if hasattr(self, 'maximize_icon_ctrl'):
+                self.maximize_icon_ctrl.name = ft.Icons.CONTENT_COPY if is_max else ft.Icons.CROP_SQUARE
+                self.maximize_icon_ctrl.size = 12 if is_max else 13
+            if hasattr(self, 'maximize_btn'):
+                self.maximize_btn.tooltip = "Restore Down" if is_max else "Maximize"
+        except Exception:
+            pass
+
+    def _on_title_bar_close(self, e=None):
+        """Handle close button click matching app settings."""
+        try:
+            if self.settings_manager.get('show_close_confirmation', True):
+                self._show_exit_dialog()
+            else:
+                action = self.settings_manager.get('default_close_action', 'minimize')
+                if action == 'exit':
+                    self._exit_app()
+                else:
+                    self._minimize_to_tray()
+        except Exception as ex:
+            print(f"Error on title bar close: {ex}")
+
+    def _on_theme_changed(self):
+        """Callback when theme, base mode, or accent changes."""
+        self._update_title_bar_theme()
+        if hasattr(self, 'root_container'):
+            self._update_layout()
+
     def _setup_ui(self):
         # Navigation Rail (Sidebar)
         self.rail = ft.NavigationRail(
@@ -1357,7 +1603,8 @@ class TorrentSearchApp:
             self.download_manager,
             self.providers,
             self.provider_manager,
-            update_bg_callback=self._apply_bg_image
+            update_bg_callback=self._apply_bg_image,
+            update_theme_callback=self._on_theme_changed
         )
         self.about_view = self._build_about_view()
         
@@ -1393,6 +1640,9 @@ class TorrentSearchApp:
         
         # Setup resize handler
         self.page.on_resize = self._on_resize
+        
+        # Build custom title bar
+        self._build_custom_title_bar()
         
         # Initial layout update
         self._update_layout()
@@ -1451,20 +1701,27 @@ class TorrentSearchApp:
                     self.body,
                 ], expand=True, spacing=0)
             
+            # Assemble main layout with custom title bar at the top
+            main_layout = ft.Column([
+                self.custom_title_bar,
+                ft.Container(content=content, expand=True)
+            ], expand=True, spacing=0)
+
             # Apply Gradient Background for Glass Theme
             if is_glass:
                 bg_gradient = ft.LinearGradient(
                     begin=ft.Alignment.TOP_LEFT,
                     end=ft.Alignment.BOTTOM_RIGHT,
-                    colors=["#0F0F13", "#1A1320", "#251838", "#2D1B3D"] if True else ["#E0E0E0", "#F5F5F7", "#FFFFFF"],
+                    colors=["#0F0F13", "#1A1320", "#251838", "#2D1B3D"],
                 )
-                self.root_container.content = content
+                self.root_container.content = main_layout
                 self.root_container.gradient = bg_gradient
             else:
-                self.root_container.content = content
+                self.root_container.content = main_layout
                 self.root_container.gradient = None
                 
             self._apply_bg_image()
+            self._update_title_bar_theme()
                 
             debug_log(f"Calling page.update(). is_glass={is_glass}, is_mobile={is_mobile}")
             self.page.update()
@@ -1548,6 +1805,8 @@ class TorrentSearchApp:
     def _open_changelog_dialog(self, e):
         inner_content = ft.Container(
             content=ft.Column([
+            ft.Text("v2.3.0", weight=ft.FontWeight.BOLD, size=16),
+            ft.Text("• Upgraded core BitTorrent engine to libtorrent 2.1.1 for faster peer discovery and transfer.\n• Optimized app package size by ~35% (~110 MB reduction).\n• Updated Flet UI framework to 0.86.5 with polished tab highlights.\n• Full Python 3.10–3.13 baseline with dynamic Windows DLL preloading.\n• High-resolution app branding and multi-size Windows icon refresh.\n• Enhanced Windows integration with SOCKS proxy and COM drag-and-drop support.\n", size=13),
             ft.Text("v2.2.0", weight=ft.FontWeight.BOLD, size=16),
             ft.Text("  Impliment drag & drop natively.\n  Polished and improved some UI elements.\n  Known bug fixed.\n", size=13),  
             ft.Text("v2.1.6", weight=ft.FontWeight.BOLD, size=16),
@@ -1638,9 +1897,10 @@ class TorrentSearchApp:
                 ),
                 ft.Container(height=10),
                 ft.Text("SwiftSeed", size=40, weight=ft.FontWeight.BOLD, color="primary"),
-                ft.Text("Version 2.2.1", size=20, weight=ft.FontWeight.W_500),
+                ft.Text("Version 2.3.1", size=20, weight=ft.FontWeight.W_500),
                 ft.Container(height=20),
                 ft.Text("Developed by Sayan Dey", size=18),
+                ft.Text("Icon Art by Sayan Paul", size=15),
                 ft.Container(height=10),
                 ft.Text("A fast and lightweight torrent search and download client.", size=16),
                 ft.Text("Built with Python, Flet, and Libtorrent.", size=16),
@@ -5287,6 +5547,7 @@ class TorrentSearchApp:
                 self.settings_manager.set('theme', accent_key)
 
             self.page.update()
+            self._on_theme_changed()
             # Refresh the theme pill visuals
             _refresh_pill()
             _refresh_circles()

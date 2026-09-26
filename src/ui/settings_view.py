@@ -17,7 +17,7 @@ def _resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 class SettingsView(ft.Container):
-    def __init__(self, page, settings_manager, download_manager, providers, provider_manager, update_bg_callback=None):
+    def __init__(self, page, settings_manager, download_manager, providers, provider_manager, update_bg_callback=None, update_theme_callback=None):
         super().__init__()
         self._page = page
         self.settings_manager = settings_manager
@@ -25,6 +25,7 @@ class SettingsView(ft.Container):
         self.providers = providers
         self.provider_manager = provider_manager
         self.update_bg_callback = update_bg_callback
+        self.update_theme_callback = update_theme_callback
         self.expand = True
         self.padding = 20
         
@@ -50,6 +51,7 @@ class SettingsView(ft.Container):
             length=6,
             content=ft.Column([
                 ft.TabBar(
+                    splash_border_radius=ft.BorderRadius.all(8),
                     tabs=[
                         ft.Tab(label="General", icon=ft.Icons.SETTINGS),
                         ft.Tab(label="Download Settings", icon=ft.Icons.DOWNLOAD),
@@ -234,6 +236,11 @@ class SettingsView(ft.Container):
                 self.settings_manager.set('theme', 'light')
             else:
                 self.settings_manager.set('theme', accent_key)
+            if self.update_theme_callback:
+                try:
+                    self.update_theme_callback()
+                except Exception:
+                    pass
             self._page.update()
             _refresh_pill(update_page=True)
             _refresh_circles()
@@ -564,6 +571,11 @@ class SettingsView(ft.Container):
                 self._page.window.opacity = 1.0
             
             self.settings_manager.set('base_mode', mode.lower())
+            if self.update_theme_callback:
+                try:
+                    self.update_theme_callback()
+                except Exception:
+                    pass
             self._page.update()
             self._show_snack(f"Base mode changed to {mode}")
         

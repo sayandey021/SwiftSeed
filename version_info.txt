@@ -1,8 +1,8 @@
 # VSVersionInfo file for PyInstaller
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 2, 1, 0),
-    prodvers=(2, 2, 1, 0),
+    filevers=(2, 3, 1, 0),
+    prodvers=(2, 3, 1, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -18,12 +18,12 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'SwiftSeed'),
             StringStruct(u'FileDescription', u'SwiftSeed Desktop Torrent Client'),
-            StringStruct(u'FileVersion', u'2.2.1.0'),
+            StringStruct(u'FileVersion', u'2.3.1.0'),
             StringStruct(u'InternalName', u'SwiftSeed'),
             StringStruct(u'LegalCopyright', u'Copyright (c) 2026 Sayan Dey'),
             StringStruct(u'OriginalFilename', u'SwiftSeed.exe'),
             StringStruct(u'ProductName', u'SwiftSeed Desktop'),
-            StringStruct(u'ProductVersion', u'2.2.1.0')
+            StringStruct(u'ProductVersion', u'2.3.1.0')
           ]
         )
       ]

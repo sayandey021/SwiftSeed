@@ -16,6 +16,12 @@
   - Integrated and pinned `pywin32>=305` and `comtypes>=1.2.0` for native Windows Jump List, tray management, single-instance messaging, and native drag-and-drop.
   - Added `PySocks>=1.7.1` for reliable SOCKS4/SOCKS5 proxy support in provider networking.
   - Synchronized and cleaned `requirements.txt` and `setup.py` with verified production version constraints.
+- **Brand & Icon Asset Overhaul**:
+  - **New High-Resolution App Branding**: Upgraded primary application icon from high-res source (`icon/icon.png`) across the window titlebar, system tray, About screen, and executable metadata.
+  - **Multi-Resolution Windows ICOs**: Re-engineered `icon.ico` and `file.ico` to package 7 distinct resolution frames (`16×16`, `24×24`, `32×32`, `48×48`, `64×64`, `128×128`, and `256×256`) with Lanczos resampling, eliminating blurry scaling artifacts in Windows Explorer, the Taskbar, and Alt+Tab switchers.
+  - **Aspect-Preserved `.torrent` File Icon**: Fitted the updated `.torrent` document icon (`file.png`) onto a square transparent frame, ensuring natural vertical document proportions without horizontal stretching in Windows Explorer.
+  - **MSIX & Windows Store Asset Synchronization**: Regenerated all 30 MSIX app and file association tiles (`StoreLogo`, `Square150x150Logo`, `Square44x44Logo`, `SplashScreen`, and `FileLogo` plated & unplated variants) using `create_msix_assets.py`.
+  - **Build Pipeline Icon Automation**: Enhanced `scripts/build_exe.py`, `scripts/copy_icons.py`, and `scripts/regenerate_file_icons.py` to automatically mirror and maintain icon assets between `icon/`, `src/assets/`, and distribution bundles.
 
 ---
 

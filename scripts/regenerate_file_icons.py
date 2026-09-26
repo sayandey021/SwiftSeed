@@ -54,15 +54,16 @@ def main():
         print(f"WARNING: Source image is only {img.width}x{img.height}. "
               f"For best results, use a 512x512 or larger source.")
     
-    # Generate each size frame
-    frames = []
-    for size in ICO_SIZES:
-        frame = img.resize((size, size), Image.Resampling.LANCZOS)
-        frames.append(frame)
-        print(f"  Generated {size}x{size} frame")
+    # Pad to square canvas to preserve aspect ratio in Windows Explorer
+    w, h = img.size
+    max_dim = max(w, h)
+    square = Image.new('RGBA', (max_dim, max_dim), (0, 0, 0, 0))
+    offset_x = (max_dim - w) // 2
+    offset_y = (max_dim - h) // 2
+    square.paste(img, (offset_x, offset_y))
+    print(f"Padded to square canvas: {max_dim}x{max_dim}")
     
-    # Save as ICO with all frames
-    # The 256x256 frame will be PNG-compressed inside the ICO (standard for modern .ico)
+    # Save as ICO with all standard sizes
     output_paths = [
         os.path.join(base_dir, "icon", "file.ico"),
         os.path.join(base_dir, "src", "assets", "file.ico"),
@@ -70,11 +71,10 @@ def main():
     
     for output_path in output_paths:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        frames[0].save(
+        square.save(
             output_path,
             format='ICO',
-            sizes=[(s, s) for s in ICO_SIZES],
-            append_images=frames[1:]
+            sizes=[(s, s) for s in ICO_SIZES]
         )
         file_size = os.path.getsize(output_path)
         print(f"  Saved: {output_path} ({file_size:,} bytes)")

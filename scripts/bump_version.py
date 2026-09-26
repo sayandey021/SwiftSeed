@@ -43,11 +43,12 @@ def bump_version(new_version):
                 (r'#define MyAppVersion "[\d\.]+"', f'#define MyAppVersion "{v_medium}"')
             ]
         },
-        # 4. src/main.py (About page)
+        # 4. src/main.py (About page & Custom Title Bar)
         {
             "file": "src/main.py",
             "replacements": [
-                (r'ft\.Text\("Version [\d\.]+"', f'ft.Text("Version {v_medium}"')
+                (r'ft\.Text\("Version [\d\.]+"', f'ft.Text("Version {v_medium}"'),
+                (r'(self\.title_bar_version_text\s*=\s*ft\.Text\(\s*[\r\n\s]*")v[\d\.]+"', rf'\g<1>v{v_medium}"')
             ]
         },
         # 5. scripts/build_exe.py

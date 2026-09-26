@@ -1,17 +1,16 @@
-import shutil
 import os
+import shutil
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 icon_dir = os.path.join(base_dir, "icon")
 assets_dir = os.path.join(base_dir, "src", "assets")
+os.makedirs(assets_dir, exist_ok=True)
 
-file_ico_src = os.path.join(icon_dir, "file.ico")
-file_png_src = os.path.join(icon_dir, "file.png")
-
-if os.path.exists(file_ico_src):
-    shutil.copy2(file_ico_src, os.path.join(assets_dir, "file.ico"))
-    print(f"Copied {file_ico_src} to assets.")
-
-if os.path.exists(file_png_src):
-    shutil.copy2(file_png_src, os.path.join(assets_dir, "file.png"))
-    print(f"Copied {file_png_src} to assets.")
+for fname in ["icon.png", "icon.ico", "file.png", "file.ico"]:
+    src = os.path.join(icon_dir, fname)
+    dst = os.path.join(assets_dir, fname)
+    if os.path.exists(src):
+        shutil.copy2(src, dst)
+        print(f"Copied {src} -> {dst}")
+    else:
+        print(f"Notice: {src} not found in icon/")
